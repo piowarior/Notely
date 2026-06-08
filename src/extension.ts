@@ -320,21 +320,48 @@ class NotePanel {
             flex: 1; 
             border: none !important; 
             font-size: 14pt; 
-            line-height: 1.5;
+            line-height: 1.15;
             padding: 20px 40px;
         }
         .ql-editor {
             min-height: 100%;
         }
         .ql-editor h1, .ql-editor h2, .ql-editor h3, .ql-editor p {
-             margin-bottom: 0.5em;
+             margin-top: 2px;
+             margin-bottom: 3px;
         }
         
         
-        .ql-editor table { border-collapse: collapse; width: 100%; margin: 1em 0; border: 1px solid #ffffff !important; }
-        .ql-editor td, .ql-editor th { border: 1px solid #ffffff !important; padding: 8px 12px; min-width: 40px; }
-        table { border-collapse: collapse; width: 100%; margin: 1em 0; border: 1px solid #ffffff !important; }
-        td, th { border: 1px solid #ffffff !important; padding: 8px 12px; }
+        /* Table layout and cell wrapping styles */
+        .ql-editor table { 
+            border-collapse: collapse; 
+            width: 100%; 
+            margin: 1em 0; 
+            border: 1px solid #ffffff !important; 
+            table-layout: fixed; 
+        }
+        .ql-editor td, .ql-editor th { 
+            border: 1px solid #ffffff !important; 
+            padding: 8px 12px; 
+            min-width: 40px; 
+            word-break: break-word; 
+            overflow-wrap: break-word; 
+            white-space: normal; 
+        }
+        table { 
+            border-collapse: collapse; 
+            width: 100%; 
+            margin: 1em 0; 
+            border: 1px solid #ffffff !important; 
+            table-layout: fixed; 
+        }
+        td, th { 
+            border: 1px solid #ffffff !important; 
+            padding: 8px 12px; 
+            word-break: break-word; 
+            overflow-wrap: break-word; 
+            white-space: normal; 
+        }
 
         /* Line spacing picker styling */
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight {
@@ -345,6 +372,7 @@ class NotePanel {
         }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="1"]::before { content: '1.0' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="1.15"]::before { content: '1.15' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="1.2"]::before { content: '1.2' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="1.5"]::before { content: '1.5' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="2"]::before { content: '2.0' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="2.5"]::before { content: '2.5' !important; }
@@ -355,13 +383,14 @@ class NotePanel {
         }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="1"]::before { content: '1.0' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="1.15"]::before { content: '1.15' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="1.2"]::before { content: '1.2' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="1.5"]::before { content: '1.5' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="2"]::before { content: '2.0' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="2.5"]::before { content: '2.5' !important; }
         .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="3"]::before { content: '3.0' !important; }
 
         /* Custom Table Dropdown Grid UI */
-        .custom-dropdown-container { position: relative; display: inline-block; }
+        .custom-dropdown-container { relative; display: inline-block; }
         #table-dropdown { 
             position: absolute; 
             top: 100%; 
@@ -430,6 +459,8 @@ class NotePanel {
         #table-actions button:hover {
             background: var(--hover-color);
         }
+
+        /* Context Menu Removed */
     </style>
 </head>
 <body>
@@ -461,8 +492,9 @@ class NotePanel {
                 <select class="ql-align" title="Text Alignment"></select>
                 <select class="ql-lineheight" title="Line Spacing">
                     <option value="1">1.0</option>
-                    <option value="1.15">1.15</option>
-                    <option value="1.5" selected>1.5</option>
+                    <option value="1.15" selected>1.15</option>
+                    <option value="1.2">1.2</option>
+                    <option value="1.5">1.5</option>
                     <option value="2">2.0</option>
                     <option value="2.5">2.5</option>
                     <option value="3">3.0</option>
@@ -525,7 +557,7 @@ class NotePanel {
         var Parchment = Quill.import('parchment');
         var LineHeightStyle = new Parchment.Attributor.Style('lineheight', 'line-height', {
             scope: Parchment.Scope.BLOCK,
-            whitelist: ['1', '1.15', '1.5', '2', '2.5', '3']
+            whitelist: ['1', '1.15', '1.2', '1.5', '2', '2.5', '3']
         });
         Quill.register({'formats/lineheight': LineHeightStyle}, true);
 
@@ -600,6 +632,24 @@ class NotePanel {
             // Trigger save
             quill.root.dispatchEvent(new Event('input', { bubbles: true }));
         }
+
+        // Fix: let native browser handle Backspace/Delete/typing inside table cells
+        // (Quill's BlockEmbed intercepts keyboard events, so we bypass it when in a table)
+        quill.root.addEventListener('keydown', function(e) {
+            var sel = window.getSelection();
+            if (!sel || !sel.anchorNode) return;
+            var node = sel.anchorNode;
+            // walk up to see if we're inside a .ql-table-embed
+            while (node && node !== quill.root) {
+                if (node.classList && node.classList.contains('ql-table-embed')) {
+                    // We are inside a table embed — stop Quill from swallowing these keys
+                    e.stopPropagation();
+                    return;
+                }
+                node = node.parentNode;
+            }
+        }, true); // capture phase so we run before Quill's own listeners
+
 
         function getCell() {
             var sel = window.getSelection();
@@ -736,7 +786,11 @@ class NotePanel {
         }
         quill.on('text-change', notifySave);
         quill.root.addEventListener('input', notifySave);
+
+
     </script>
+
+
 </body>
 </html>`;
     }

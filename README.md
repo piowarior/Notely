@@ -1,71 +1,38 @@
-# notely README
+# Notely
 
-This is the README for your extension "notely". After writing up a brief description, we recommend including the following sections.
+**Elevate Your Development Workflow. Capture Ideas Seating Right Inside VS Code.**
 
-## Features
+Notely is a minimalist, high-performance note-taking environment designed exclusively for developers. By embedding a premium rich-text workspace directly into Visual Studio Code, Notely eliminates context switching, allowing you to document logic, draft APIs, keep todo lists, and structure thoughts without leaving your editor. 
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
-
-## Requirements
-
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+Built with speed, efficiency, and a seamless developer experience in mind.
 
 ---
 
-## Following extension guidelines
+## ⚡ Key Highlights
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+- **Zero Context Switching:** Create, organize, and edit your personal notes instantly from your activity bar. Keep your focus where it belongs—in your codebase.
+- **Rich Tech-Note Editor:** A fully equipped WYSIWYG editor featuring robust formatting (Bold, Italics, Headings, Highlights) and custom line-height scaling to fit your readability preferences.
+- **Embedded Table Engine:** Create tables dynamically via an interactive 10x10 grid picker or specify exact rows and columns. Designed to handle code structures, data schemas, and specifications cleanly.
+- **Developer-Centric Formatting & Exports:** Keep documentation local or export your structured notes to Markdown (.md), Microsoft Word (.doc), or plain text (.txt) with a single click.
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+---
 
-## Working with Markdown
+## 🚀 Getting Started
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+Notely integrates seamlessly into your current workspace. Follow these simple steps:
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+1. **Access the workspace:** Click the **Notely Icon** on the VS Code Activity Bar (Sidebar) to reveal your note directory.
+2. **Organize:** Use the toolbar icons to create **Folders** (`new-folder`) and **Notes** (`new-file`) inside your workspace.
+3. **Write:** Double-click any note to launch the interactive rich-text editor tab.
+4. **Format:** Use the inline toolbar to apply formatting, adjust line heights, or insert customizable tables.
+5. **Manage & Export:** Right-click any folder or note in the tree view to **Rename**, **Delete**, or **Export** it as a Markdown (.md) or Word (.doc) file.
 
-## For more information
+---
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+## 🔧 System Requirements
 
-**Enjoy!**
+- **Visual Studio Code** version `1.103.0` or later.
+
+## 📄 License
+
+Distributed under the MIT License.
