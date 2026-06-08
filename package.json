@@ -12,51 +12,121 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
-  "commands": [
-    {
-      "command": "notely.addNote",
-      "title": "Add Note"
-    },
-    {
-      "command": "notely.addFolder",
-      "title": "Add Folder"
-    }
-  ],
-
-  "viewsContainers": {
-    "activitybar": [
+    "submenus": [
       {
-        "id": "notely",
-        "title": "Notely",
-        "icon": "media/notely.svg"
+        "id": "notely.exportMenu",
+        "label": "Export Note..."
       }
-    ]
-  },
-
-  "menus": {
-    "view/title": [
+    ],
+    "commands": [
       {
         "command": "notely.addNote",
-        "when": "view == notelyView",
-        "group": "navigation"
+        "title": "Add Note",
+        "icon": "$(new-file)"
       },
       {
         "command": "notely.addFolder",
-        "when": "view == notelyView",
-        "group": "navigation"
-      }
-    ]
-  },
-
-  "views": {
-    "notely": [
+        "title": "Add Folder",
+        "icon": "$(new-folder)"
+      },
       {
-        "id": "notelyView",
-        "name": "Notes"
+        "command": "notely.rename",
+        "title": "Rename"
+      },
+      {
+        "command": "notely.delete",
+        "title": "Delete"
+      },
+      {
+        "command": "notely.open",
+        "title": "Open Note"
+      },
+      {
+        "command": "notely.export.md",
+        "title": "Export as Markdown (.md) to Project Root"
+      },
+      {
+        "command": "notely.export.doc",
+        "title": "Export as Word (.doc) to Project Root"
+      },
+      {
+        "command": "notely.export.custom",
+        "title": "Export to Custom format & location..."
       }
-    ]
-  }
-},
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "notely",
+          "title": "Notely",
+          "icon": "media/notely.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "notely.addFolder",
+          "when": "view == notelyView",
+          "group": "navigation"
+        },
+        {
+          "command": "notely.addNote",
+          "when": "view == notelyView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "notely.addNote",
+          "when": "view == notelyView && viewItem == folder",
+          "group": "1_modification"
+        },
+        {
+          "command": "notely.rename",
+          "when": "view == notelyView",
+          "group": "2_modification"
+        },
+        {
+          "command": "notely.delete",
+          "when": "view == notelyView",
+          "group": "3_modification"
+        },
+        {
+          "command": "notely.open",
+          "when": "view == notelyView && viewItem == note",
+          "group": "1_modification"
+        },
+        {
+          "submenu": "notely.exportMenu",
+          "when": "view == notelyView && viewItem == note",
+          "group": "4_modification"
+        }
+      ],
+      "notely.exportMenu": [
+        {
+          "command": "notely.export.md",
+          "group": "1_format"
+        },
+        {
+          "command": "notely.export.doc",
+          "group": "1_format"
+        },
+        {
+          "command": "notely.export.custom",
+          "group": "2_custom"
+        }
+      ]
+    },
+    "views": {
+      "notely": [
+        {
+          "id": "notelyView",
+          "name": "Notes"
+        }
+      ]
+    }
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
@@ -66,13 +136,19 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.120.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "typescript-eslint": "^8.56.1",
+    "@types/node": "^22.19.20",
+    "@types/turndown": "^5.0.6",
+    "@types/vscode": "^1.120.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.3",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.56.1"
+  },
+  "dependencies": {
+    "quill-table-ui": "^1.0.7",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2"
   }
 }
