@@ -43,15 +43,15 @@
       },
       {
         "command": "notely.export.md",
-        "title": "Export as Markdown (.md) to Project Root"
+        "title": "Export as Markdown (.md)"
       },
       {
         "command": "notely.export.doc",
-        "title": "Export as Word (.doc) to Project Root"
+        "title": "Export as Word (.doc)"
       },
       {
-        "command": "notely.export.custom",
-        "title": "Export to Custom format & location..."
+        "command": "notely.export.txt",
+        "title": "Export as Text Document (.txt)"
       }
     ],
     "viewsContainers": {
@@ -113,8 +113,8 @@
           "group": "1_format"
         },
         {
-          "command": "notely.export.custom",
-          "group": "2_custom"
+          "command": "notely.export.txt",
+          "group": "1_format"
         }
       ]
     },

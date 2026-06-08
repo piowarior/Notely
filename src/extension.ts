@@ -237,7 +237,6 @@ class NotePanel {
     <title>Note Editor</title>
     <!-- Include Quill and Table Plugins -->
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-    <link href="https://unpkg.com/quill-table-ui@1.0.5/dist/index.css" rel="stylesheet">
     <style>
         :root {
             --bg-color: var(--vscode-editor-background);
@@ -308,11 +307,20 @@ class NotePanel {
         .ql-toolbar.ql-snow .ql-picker-options { background-color: var(--vscode-editorWidget-background); border-color: var(--border-color); }
         .ql-toolbar.ql-snow .ql-picker-item:hover { background-color: var(--hover-color); }
         
+        /* Active states for tools */
+        button.ql-active, .ql-picker-label.ql-active {
+            background-color: var(--vscode-button-background) !important;
+            border-radius: 4px;
+            color: var(--vscode-button-foreground) !important;
+        }
+        button.ql-active .ql-stroke, .ql-picker-label.ql-active .ql-stroke { stroke: var(--vscode-button-foreground) !important; }
+        button.ql-active .ql-fill, .ql-picker-label.ql-active .ql-fill { fill: var(--vscode-button-foreground) !important; }
+        
         #editor { 
             flex: 1; 
             border: none !important; 
             font-size: 14pt; 
-            line-height: 1.6;
+            line-height: 1.5;
             padding: 20px 40px;
         }
         .ql-editor {
@@ -322,13 +330,106 @@ class NotePanel {
              margin-bottom: 0.5em;
         }
         
-        /* Table UI overrides to match dark mode context if needed */
-        .ql-table-ui { box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important; background: var(--vscode-editorWidget-background); border: 1px solid var(--border-color); color: var(--fg-color); }
-        .ql-table-ui-item { color: var(--fg-color) !important; }
-        .ql-table-ui-item:hover { background-color: var(--hover-color) !important; }
+        
+        .ql-editor table { border-collapse: collapse; width: 100%; margin: 1em 0; border: 1px solid #ffffff !important; }
+        .ql-editor td, .ql-editor th { border: 1px solid #ffffff !important; padding: 8px 12px; min-width: 40px; }
+        table { border-collapse: collapse; width: 100%; margin: 1em 0; border: 1px solid #ffffff !important; }
+        td, th { border: 1px solid #ffffff !important; padding: 8px 12px; }
 
-        table { border-collapse: collapse; width: 100%; margin-bottom: 1em; border: 1px solid #ccc; }
-        td, th { border: 1px solid #ccc; padding: 8px; }
+        /* Line spacing picker styling */
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight {
+            width: 100px;
+        }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label::before {
+            content: 'Spacing' !important;
+        }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="1"]::before { content: '1.0' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="1.15"]::before { content: '1.15' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="1.5"]::before { content: '1.5' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="2"]::before { content: '2.0' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="2.5"]::before { content: '2.5' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-label[data-value="3"]::before { content: '3.0' !important; }
+
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item::before {
+            content: attr(data-value) !important;
+        }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="1"]::before { content: '1.0' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="1.15"]::before { content: '1.15' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="1.5"]::before { content: '1.5' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="2"]::before { content: '2.0' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="2.5"]::before { content: '2.5' !important; }
+        .ql-snow.ql-toolbar .ql-picker.ql-lineheight .ql-picker-item[data-value="3"]::before { content: '3.0' !important; }
+
+        /* Custom Table Dropdown Grid UI */
+        .custom-dropdown-container { position: relative; display: inline-block; }
+        #table-dropdown { 
+            position: absolute; 
+            top: 100%; 
+            left: 0; 
+            background: var(--vscode-editorWidget-background); 
+            border: 1px solid var(--border-color); 
+            padding: 10px; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
+            z-index: 1000; 
+            width: 170px; 
+        }
+        .hidden { display: none !important; }
+        .table-grid { display: grid; grid-template-columns: repeat(10, 14px); gap: 2px; }
+        .grid-cell { width: 14px; height: 14px; border: 1px solid var(--border-color); cursor: pointer; }
+        .grid-cell.selected { background-color: var(--vscode-button-background); border-color: var(--vscode-button-hoverBackground); }
+        #table-grid-label { text-align: center; margin-top: 8px; font-weight: bold; font-size: 13px; }
+        
+        .table-inputs { 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            margin-top: 10px; 
+            padding-top: 10px; 
+            border-top: 1px solid var(--border-color); 
+            gap: 6px; 
+        }
+        .table-inputs input { 
+            width: 45px; 
+            background: var(--vscode-input-background); 
+            color: var(--vscode-input-foreground); 
+            border: 1px solid var(--vscode-input-border, var(--border-color)); 
+            border-radius: 3px; 
+            padding: 4px; 
+            font-size: 12px; 
+            text-align: center; 
+        }
+        .table-inputs span { 
+            font-size: 12px; 
+            color: var(--fg-color); 
+        }
+        .table-inputs button { 
+            flex: 1; 
+            background: var(--vscode-button-background); 
+            color: var(--vscode-button-foreground); 
+            border: none; 
+            padding: 4px 8px; 
+            border-radius: 3px; 
+            cursor: pointer; 
+            font-size: 12px; 
+            font-weight: bold; 
+        }
+        .table-inputs button:hover { 
+            background: var(--vscode-button-hoverBackground); 
+        }
+
+        /* Inline Table Action buttons */
+        #table-actions button {
+            font-size: 11px;
+            width: auto;
+            padding: 2px 6px;
+            color: var(--fg-color);
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+        }
+        #table-actions button:hover {
+            background: var(--hover-color);
+        }
     </style>
 </head>
 <body>
@@ -356,26 +457,54 @@ class NotePanel {
                 <select class="ql-color" title="Text Color"></select>
                 <select class="ql-background" title="Highlight Color"></select>
             </span>
-            <span class="ql-formats toolbar-group" title="Blocks">
-                <button class="ql-blockquote" title="Quote"></button>
-                <button class="ql-code-block" title="Code Block"></button>
-            </span>
-            <span class="ql-formats toolbar-group" title="Lists & Indentation">
+            <span class="ql-formats toolbar-group" title="Paragraph Layout & Spacing">
+                <select class="ql-align" title="Text Alignment"></select>
+                <select class="ql-lineheight" title="Line Spacing">
+                    <option value="1">1.0</option>
+                    <option value="1.15">1.15</option>
+                    <option value="1.5" selected>1.5</option>
+                    <option value="2">2.0</option>
+                    <option value="2.5">2.5</option>
+                    <option value="3">3.0</option>
+                </select>
                 <button class="ql-list" value="ordered" title="Numbered List"></button>
                 <button class="ql-list" value="bullet" title="Bullet List"></button>
                 <button class="ql-indent" value="-1" title="Decrease Indent"></button>
                 <button class="ql-indent" value="+1" title="Increase Indent"></button>
             </span>
-            <span class="ql-formats toolbar-group" title="Alignment">
-                <select class="ql-align" title="Text Alignment"></select>
+            <span class="ql-formats toolbar-group" title="Blocks">
+                <button class="ql-blockquote" title="Quote"></button>
+                <button class="ql-code-block" title="Code Block"></button>
             </span>
             <span class="ql-formats toolbar-group" title="Media & Extras">
                 <button class="ql-link" title="Insert Link"></button>
                 <button class="ql-image" title="Insert Image"></button>
-                <button id="custom-table" title="Insert Table">
-                    <svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><line x1="3" y1="9" x2="15" y2="9" stroke="currentColor" stroke-width="2"/><line x1="9" y1="3" x2="9" y2="15" stroke="currentColor" stroke-width="2"/></svg>
-                </button>
+                
+                <!-- Custom Table Dropdown -->
+                <div class="custom-dropdown-container">
+                    <button id="custom-table" title="Insert Table">
+                        <svg viewBox="0 0 18 18"><rect x="3" y="3" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><line x1="3" y1="9" x2="15" y2="9" stroke="currentColor" stroke-width="2"/><line x1="9" y1="3" x2="9" y2="15" stroke="currentColor" stroke-width="2"/></svg>
+                    </button>
+                    <div id="table-dropdown" class="hidden">
+                        <div id="table-grid" class="table-grid"></div>
+                        <div id="table-grid-label">0 x 0</div>
+                        <div class="table-inputs">
+                            <input type="number" id="table-input-rows" placeholder="Row" min="1" max="50" value="3">
+                            <span>x</span>
+                            <input type="number" id="table-input-cols" placeholder="Col" min="1" max="50" value="3">
+                            <button id="table-input-btn">Insert</button>
+                        </div>
+                    </div>
+                </div>
             </span>
+
+            <span class="ql-formats toolbar-group" title="Table Actions" id="table-actions" style="display: none;">
+                <button id="add-row" title="Add Row Below">Row+</button>
+                <button id="add-col" title="Add Col Right">Col+</button>
+                <button id="del-row" title="Delete Row">Row-</button>
+                <button id="del-col" title="Delete Col">Col-</button>
+            </span>
+
             <span class="ql-formats toolbar-group" title="Clear Formatting">
                 <button class="ql-clean" title="Clear Format"></button>
             </span>
@@ -389,15 +518,39 @@ class NotePanel {
     </div>
 
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
-    <script src="https://unpkg.com/quill-table-ui@1.0.5/dist/umd/index.js"></script>
     <script>
         const vscode = acquireVsCodeApi();
         
-        Quill.register({
-            'modules/tableUI': quillTableUI.default
-        }, true);
+        // Register Line Spacing Attribute
+        var Parchment = Quill.import('parchment');
+        var LineHeightStyle = new Parchment.Attributor.Style('lineheight', 'line-height', {
+            scope: Parchment.Scope.BLOCK,
+            whitelist: ['1', '1.15', '1.5', '2', '2.5', '3']
+        });
+        Quill.register({'formats/lineheight': LineHeightStyle}, true);
 
-        const quill = new Quill('#editor', {
+        // Register Table Blot as a BlockEmbed
+        var BlockEmbed = Quill.import('blots/block/embed');
+        var Delta = Quill.import('delta');
+
+        class TableEmbed extends BlockEmbed {
+            static create(value) {
+                var node = super.create();
+                node.innerHTML = value;
+                node.setAttribute('contenteditable', 'true');
+                node.setAttribute('data-table-embed', 'true');
+                return node;
+            }
+            static value(node) {
+                return node.innerHTML;
+            }
+        }
+        TableEmbed.blotName = 'table-embed';
+        TableEmbed.tagName = 'div';
+        TableEmbed.className = 'ql-table-embed';
+        Quill.register(TableEmbed, true);
+
+        var quill = new Quill('#editor', {
             theme: 'snow',
             modules: {
                 toolbar: {
@@ -405,40 +558,184 @@ class NotePanel {
                     handlers: {
                         'link': function(value) {
                             if (value) {
-                                const href = prompt('Enter the URL (e.g. https://google.com):');
-                                this.quill.format('link', href);
+                                var href = prompt('Enter the URL (e.g. https://google.com):');
+                                if (href) {
+                                    this.quill.format('link', href);
+                                }
                             } else {
                                 this.quill.format('link', false);
                             }
+                        },
+                        'lineheight': function(value) {
+                            this.quill.format('lineheight', value);
                         }
                     }
-                },
-                table: true,
-                tableUI: true
+                }
             },
             placeholder: ''
         });
 
-        // Initialize table module manually for custom button interaction
-        const table = quill.getModule('table');
-
-        // Custom table insert functionality using Quill's internal API
-        document.querySelector('#custom-table').addEventListener('click', function() {
-            table.insertTable(3, 3);
+        // Add Clipboard Matcher for table-embed
+        quill.clipboard.addMatcher('div.ql-table-embed', function(node, delta) {
+            return new Delta().insert({ 'table-embed': node.innerHTML });
         });
+
+        function insertTableHTML(rows, cols) {
+            quill.focus();
+            var range = quill.getSelection(true);
+            var index = range ? range.index : quill.getLength();
+
+            var tableHtml = '<table><tbody>';
+            for (var r = 0; r < rows; r++) { 
+                tableHtml += '<tr>'; 
+                for (var c = 0; c < cols; c++) { 
+                    tableHtml += '<td><br></td>'; 
+                } 
+                tableHtml += '</tr>'; 
+            }
+            tableHtml += '</tbody></table>';
+
+            quill.insertEmbed(index, 'table-embed', tableHtml, Quill.sources.USER);
+            quill.setSelection(index + 1, Quill.sources.SILENT);
+            // Trigger save
+            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        function getCell() {
+            var sel = window.getSelection();
+            if (!sel || !sel.anchorNode) return null;
+            var n = sel.anchorNode;
+            while (n && n !== quill.root) { if (n.nodeName === 'TD' || n.nodeName === 'TH') return n; n = n.parentNode; }
+            return null;
+        }
+
+        // ======== Custom Table Grid Logic ========
+        var grid = document.getElementById('table-grid');
+        for (var r = 0; r < 10; r++) {
+            for (var c = 0; c < 10; c++) {
+                var cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                cell.setAttribute('data-row', String(r + 1));
+                cell.setAttribute('data-col', String(c + 1));
+                grid.appendChild(cell);
+                cell.addEventListener('mouseover', function(e) {
+                    var row = parseInt(e.target.getAttribute('data-row'));
+                    var col = parseInt(e.target.getAttribute('data-col'));
+                    document.getElementById('table-grid-label').innerText = col + ' x ' + row;
+                    var cells = document.querySelectorAll('.grid-cell');
+                    for (var i = 0; i < cells.length; i++) {
+                        var r2 = parseInt(cells[i].getAttribute('data-row'));
+                        var c2 = parseInt(cells[i].getAttribute('data-col'));
+                        if (r2 <= row && c2 <= col) { cells[i].classList.add('selected'); }
+                        else { cells[i].classList.remove('selected'); }
+                    }
+                });
+                cell.addEventListener('click', function(e) {
+                    var row = parseInt(e.target.getAttribute('data-row'));
+                    var col = parseInt(e.target.getAttribute('data-col'));
+                    insertTableHTML(row, col);
+                    document.getElementById('table-dropdown').classList.add('hidden');
+                });
+            }
+        }
+
+        document.getElementById('custom-table').addEventListener('click', function(e) {
+            document.getElementById('table-dropdown').classList.toggle('hidden');
+            e.stopPropagation();
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.custom-dropdown-container')) {
+                document.getElementById('table-dropdown').classList.add('hidden');
+            }
+        });
+
+        document.getElementById('table-input-btn').addEventListener('click', function(e) {
+            var rows = parseInt(document.getElementById('table-input-rows').value);
+            var cols = parseInt(document.getElementById('table-input-cols').value);
+            if (!isNaN(rows) && !isNaN(cols) && rows > 0 && cols > 0) {
+                insertTableHTML(rows, cols);
+            }
+            document.getElementById('table-dropdown').classList.add('hidden');
+            e.stopPropagation();
+        });
+
+        // ======== Table Row/Col Add/Delete ========
+        document.getElementById('add-row').addEventListener('click', function() {
+            var td = getCell(); if (!td) return;
+            var row = td.closest('tr'); if (!row) return;
+            var nr = row.cloneNode(true);
+            var tds = nr.querySelectorAll('td,th'); for(var i=0;i<tds.length;i++) tds[i].innerHTML='<br>';
+            row.parentNode.insertBefore(nr, row.nextSibling);
+            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        document.getElementById('add-col').addEventListener('click', function() {
+            var td = getCell(); if (!td) return;
+            var row = td.closest('tr'); if (!row) return;
+            var ci = Array.prototype.indexOf.call(row.children, td);
+            var tbl = td.closest('table'); if (!tbl) return;
+            var rows = tbl.querySelectorAll('tr');
+            for(var i=0;i<rows.length;i++){var ref=rows[i].children[ci];var nc=document.createElement('td');nc.innerHTML='<br>';if(ref&&ref.nextSibling)rows[i].insertBefore(nc,ref.nextSibling);else rows[i].appendChild(nc);}
+            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        document.getElementById('del-row').addEventListener('click', function() {
+            var td = getCell(); if (!td) return;
+            var row = td.closest('tr'); if (!row) return;
+            var tbl = row.closest('table');
+            var embed = row.closest('.ql-table-embed');
+            row.parentNode.removeChild(row);
+            if (tbl && tbl.querySelectorAll('tr').length === 0) {
+                if (embed) embed.parentNode.removeChild(embed);
+                else tbl.parentNode.removeChild(tbl);
+            }
+            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        document.getElementById('del-col').addEventListener('click', function() {
+            var td = getCell(); if (!td) return;
+            var row = td.closest('tr'); if (!row) return;
+            var ci = Array.prototype.indexOf.call(row.children, td);
+            var tbl = td.closest('table'); if (!tbl) return;
+            var embed = td.closest('.ql-table-embed');
+            var rows = tbl.querySelectorAll('tr');
+            for(var i=0;i<rows.length;i++){var t=rows[i].children[ci];if(t)rows[i].removeChild(t);}
+            if(tbl.querySelector('tr')&&tbl.querySelector('tr').children.length===0) {
+                if (embed) embed.parentNode.removeChild(embed);
+                else tbl.parentNode.removeChild(tbl);
+            }
+            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+
+        function updateTableActionsVisibility() {
+            var inTable = false;
+            var sel = window.getSelection();
+            if (sel && sel.anchorNode) {
+                var node = sel.anchorNode;
+                while (node && node !== quill.root) {
+                    if (node.nodeName === 'TABLE' || node.nodeName === 'TD' || node.nodeName === 'TH') { inTable = true; break; }
+                    node = node.parentNode;
+                }
+            }
+            document.getElementById('table-actions').style.display = inTable ? 'flex' : 'none';
+        }
+
+        quill.on('selection-change', updateTableActionsVisibility);
+        quill.root.addEventListener('click', updateTableActionsVisibility);
+        quill.root.addEventListener('keyup', updateTableActionsVisibility);
 
         // Initialize with existing content
         const initialContent = \`${this.item.content || ''}\`;
         quill.clipboard.dangerouslyPasteHTML(initialContent);
 
         // Notify VS Code when content changes
-        quill.on('text-change', () => {
+        function notifySave() {
             const html = quill.root.innerHTML;
             vscode.postMessage({
                 command: 'updateContent',
                 text: html
             });
-        });
+        }
+        quill.on('text-change', notifySave);
+        quill.root.addEventListener('input', notifySave);
     </script>
 </body>
 </html>`;
@@ -527,7 +824,7 @@ export function activate(context: vscode.ExtensionContext) {
         docToItemMap.delete(doc);
     }, null, context.subscriptions);
 
-    const handleExport = async (item: NoteItem, format: string, isRoot: boolean) => {
+    const handleExport = async (item: NoteItem, format: string) => {
         const rawContent = item.content || '';
         const workspaceFolders = vscode.workspace.workspaceFolders;
         const rootPath = workspaceFolders ? workspaceFolders[0].uri.fsPath : '';
@@ -557,9 +854,18 @@ ${rawContent}
             finalContent = rawContent.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim();
         }
 
+        const targetSelected = await vscode.window.showQuickPick([
+            { label: 'Export to current Project Root', isRoot: true },
+            { label: 'Choose custom location...', isRoot: false }
+        ], { placeHolder: `Select export location for ${format}` });
+
+        if (!targetSelected) {
+            return;
+        }
+
         let finalUri: vscode.Uri | undefined;
 
-        if (isRoot && rootPath) {
+        if (targetSelected.isRoot && rootPath) {
             const filePath = path.join(rootPath, item.label + format);
             finalUri = vscode.Uri.file(filePath);
         } else {
@@ -587,7 +893,7 @@ ${rawContent}
     context.subscriptions.push(
         vscode.commands.registerCommand('notely.export.md', (item: NoteItem) => {
             if (item && !item.isFolder) {
-                handleExport(item, '.md', true);
+                handleExport(item, '.md');
             }
         })
     );
@@ -595,25 +901,55 @@ ${rawContent}
     context.subscriptions.push(
         vscode.commands.registerCommand('notely.export.doc', (item: NoteItem) => {
             if (item && !item.isFolder) {
-                handleExport(item, '.doc', true);
+                handleExport(item, '.doc');
             }
         })
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('notely.export.custom', async (item: NoteItem) => {
-            if (!item || item.isFolder) {
-                return;
+        vscode.commands.registerCommand('notely.export.txt', (item: NoteItem) => {
+            if (item && !item.isFolder) {
+                handleExport(item, '.txt');
             }
-            
-            const formatSelected = await vscode.window.showQuickPick([
-                { label: 'Markdown (.md)', extension: '.md' },
-                { label: 'Word Document (.doc)', extension: '.doc' },
-                { label: 'Text Document (.txt)', extension: '.txt' }
-            ], { placeHolder: 'Select export format' });
+        })
+    );
 
-            if (formatSelected) {
-                handleExport(item, formatSelected.extension, false);
+    // ========== IMPORT NOTE ==========
+    context.subscriptions.push(
+        vscode.commands.registerCommand('notely.import', async (item: NoteItem) => {
+            const fileUri = await vscode.window.showOpenDialog({
+                canSelectMany: false,
+                filters: {
+                    'Documents': ['md', 'doc', 'txt'],
+                    'All Files': ['*']
+                }
+            });
+
+            if (fileUri && fileUri[0]) {
+                const content = fs.readFileSync(fileUri[0].fsPath, 'utf8');
+
+                // Determine file type based on extension
+                const ext = path.extname(fileUri[0].fsPath).toLowerCase();
+                let parsedContent = content;
+
+                if (ext === '.md') {
+                    // Markdown - use as is
+                    parsedContent = content;
+                } else if (ext === '.doc') {
+                    // Word Document - convert from HTML
+                    const turndownService = new TurndownService();
+                    turndownService.use(turndownPluginGfm.gfm);
+                    parsedContent = turndownService.turndown(content);
+                } else if (ext === '.txt') {
+                    // Text file - convert HTML tags to new lines
+                    parsedContent = content.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim();
+                }
+
+                // Create a new note with the imported content
+                provider.addNote(path.basename(fileUri[0].fsPath, ext), item);
+                const newItem = provider.items[provider.items.length - 1];
+                newItem.content = parsedContent;
+                provider.save();
             }
         })
     );
