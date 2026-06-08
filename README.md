@@ -1,38 +1,40 @@
 # Notely
 
-**Elevate Your Development Workflow. Capture Ideas Seating Right Inside VS Code.**
+![GitHub issues](https://img.shields.io/github/issues/piowarior/Notely)
+![GitHub license](https://img.shields.io/github/license/piowarior/Notely)
 
-Notely is a minimalist, high-performance note-taking environment designed exclusively for developers. By embedding a premium rich-text workspace directly into Visual Studio Code, Notely eliminates context switching, allowing you to document logic, draft APIs, keep todo lists, and structure thoughts without leaving your editor. 
-
-Built with speed, efficiency, and a seamless developer experience in mind.
-
----
-
-## ⚡ Key Highlights
-
-- **Zero Context Switching:** Create, organize, and edit your personal notes instantly from your activity bar. Keep your focus where it belongs—in your codebase.
-- **Rich Tech-Note Editor:** A fully equipped WYSIWYG editor featuring robust formatting (Bold, Italics, Headings, Highlights) and custom line-height scaling to fit your readability preferences.
-- **Embedded Table Engine:** Create tables dynamically via an interactive 10x10 grid picker or specify exact rows and columns. Designed to handle code structures, data schemas, and specifications cleanly.
-- **Developer-Centric Formatting & Exports:** Keep documentation local or export your structured notes to Markdown (.md), Microsoft Word (.doc), or plain text (.txt) with a single click.
+Notely is a global note-taking companion for Visual Studio Code. Designed to eliminate context switching, Notely provides a persistent, rich-text workspace that stays accessible across all your projects. Whether you are documenting coding rules, storing frequently used snippets, or managing project requirements, Notely ensures your essential information is always visible right alongside your codebase.
 
 ---
 
-## 🚀 Getting Started
+## Core Features
 
-Notely integrates seamlessly into your current workspace. Follow these simple steps:
-
-1. **Access the workspace:** Click the **Notely Icon** on the VS Code Activity Bar (Sidebar) to reveal your note directory.
-2. **Organize:** Use the toolbar icons to create **Folders** (`new-folder`) and **Notes** (`new-file`) inside your workspace.
-3. **Write:** Double-click any note to launch the interactive rich-text editor tab.
-4. **Format:** Use the inline toolbar to apply formatting, adjust line heights, or insert customizable tables.
-5. **Manage & Export:** Right-click any folder or note in the tree view to **Rename**, **Delete**, or **Export** it as a Markdown (.md) or Word (.doc) file.
+- **Global Persistence:** Your notes are accessible across all VS Code projects, allowing you to reference documentation while working on different codebases simultaneously.
+- **Word-like Editor:** A high-fidelity rich-text editor that simplifies formatting. Write with ease and ensure your output remains clean and structured.
+- **Flexible Exporting:** Export your notes instantly to Markdown (.md), Microsoft Word (.doc), or plain text (.txt) formats to share your findings or integrate them into project repositories.
+- **Hierarchical Organization:** Structure your workspace with custom folders and files, keeping your documentation environment as organized as your project files.
 
 ---
 
-## 🔧 System Requirements
+## Workspace Structure
+
+![Notely Workspace Structure](<gambar.png>)
+
+The Notely interface provides a structured directory of folders and files. This layout facilitates seamless navigation through your documentation, allowing you to maintain a clear overview of your project requirements, logic, and notes while staying focused on your active development tasks.
+
+---
+
+## Getting Started
+
+1. **Access:** Click the Notely icon on the Activity Bar.
+2. **Create:** Use the sidebar menu to create folders and notes.
+3. **Write:** Open any note to begin drafting with the rich-text editor.
+4. **Export:** Right-click any note or folder to export your content in your preferred format.
+
+## System Requirements
 
 - **Visual Studio Code** version `1.103.0` or later.
 
-## 📄 License
+## License
 
 Distributed under the MIT License.
