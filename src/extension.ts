@@ -585,6 +585,13 @@ class NotePanel {
         var quill = new Quill('#editor', {
             theme: 'snow',
             modules: {
+
+                history: {
+                    delay: 2000,
+                    maxStack: 500,
+                    userOnly: true
+                },
+
                 toolbar: {
                     container: '#toolbar',
                     handlers: {
@@ -598,6 +605,7 @@ class NotePanel {
                                 this.quill.format('link', false);
                             }
                         },
+
                         'lineheight': function(value) {
                             this.quill.format('lineheight', value);
                         }
@@ -606,6 +614,17 @@ class NotePanel {
             },
             placeholder: ''
         });
+
+        // Helper: pause Quill's observer, run fn, resume observer, save content.
+        // This prevents Quill from seeing table DOM changes (so it won't revert them)
+        // and does NOT corrupt Quill's undo/redo history.
+        var _observerConfig = { attributes: true, characterData: true, childList: true, subtree: true };
+        function withTableGuard(fn) {
+            quill.scroll.observer.disconnect();
+            fn();
+            quill.scroll.observer.observe(quill.scroll.domNode, _observerConfig);
+            notifySave();
+        }
 
         // Intercept formatting when the selection is inside a table embed
         var originalFormat = quill.format;
@@ -622,88 +641,63 @@ class NotePanel {
                     node = node.parentNode;
                 }
                 if (insideTable) {
-                    if (name === 'bold') {
-                        document.execCommand('bold', false, null);
-                    } else if (name === 'italic') {
-                        document.execCommand('italic', false, null);
-                    } else if (name === 'underline') {
-                        document.execCommand('underline', false, null);
-                    } else if (name === 'strike') {
-                        document.execCommand('strikeThrough', false, null);
-                    } else if (name === 'color') {
-                        document.execCommand('foreColor', false, value);
-                    } else if (name === 'background') {
-                        document.execCommand('backColor', false, value);
-                    } else if (name === 'align') {
-                        var cell = getCell();
-                        if (cell) {
-                            cell.style.textAlign = value || '';
+                    withTableGuard(function() {
+                        if (name === 'bold') {
+                            document.execCommand('bold', false, null);
+                        } else if (name === 'italic') {
+                            document.execCommand('italic', false, null);
+                        } else if (name === 'underline') {
+                            document.execCommand('underline', false, null);
+                        } else if (name === 'strike') {
+                            document.execCommand('strikeThrough', false, null);
+                        } else if (name === 'color') {
+                            document.execCommand('foreColor', false, value);
+                        } else if (name === 'background') {
+                            document.execCommand('backColor', false, value);
+                        } else if (name === 'align') {
+                            var cell = getCell();
+                            if (cell) {
+                                cell.style.textAlign = value || '';
+                            }
+                        } else if (name === 'lineheight') {
+                            var cell = getCell();
+                            if (cell) {
+                                cell.style.lineHeight = value || '';
+                            }
+                        } else if (name === 'header') {
+                            var tag = value ? 'H' + value : 'span';
+                            document.execCommand('formatBlock', false, tag);
+                        } else if (name === 'list') {
+                            if (value === 'ordered') {
+                                document.execCommand('insertOrderedList', false, null);
+                            } else if (value === 'bullet') {
+                                document.execCommand('insertUnorderedList', false, null);
+                            }
+                        } else if (name === 'link') {
+                            if (value) {
+                                document.execCommand('createLink', false, value);
+                            } else {
+                                document.execCommand('unlink', false, null);
+                            }
                         }
-                    } else if (name === 'lineheight') {
-                        var cell = getCell();
-                        if (cell) {
-                            cell.style.lineHeight = value || '';
-                        }
-                    } else if (name === 'header') {
-                        var tag = value ? 'H' + value : 'span';
-                        document.execCommand('formatBlock', false, tag);
-                    } else if (name === 'list') {
-                        if (value === 'ordered') {
-                            document.execCommand('insertOrderedList', false, null);
-                        } else if (value === 'bullet') {
-                            document.execCommand('insertUnorderedList', false, null);
-                        }
-                    } else if (name === 'link') {
-                        if (value) {
-                            document.execCommand('createLink', false, value);
-                        } else {
-                            document.execCommand('unlink', false, null);
-                        }
-                    }
-                    syncTableDelta();
-                    // Use setTimeout so execCommand changes are committed to DOM BEFORE
-                    // Quill's MutationObserver fires and potentially reverts them.
-                    setTimeout(function() {
-                        syncTableDelta();
-                        quill.root.dispatchEvent(new Event('input', { bubbles: true }));
-                    }, 0);
+                    });
                     return;
                 }
             }
             return originalFormat.apply(this, arguments);
         };
 
-        // Filter out mutations inside the table embed so Quill's Mutation Observer doesn't strip or revert formats.
-        // We call the original update with filtered mutations to preserve Quill's selection/focus updates.
-        var originalScrollUpdate = quill.scroll.update;
-        quill.scroll.update = function(mutations, context) {
-            if (mutations && mutations.length > 0) {
-                var filtered = mutations.filter(function(mutation) {
-                    var target = mutation.target;
-                    while (target && target !== quill.root) {
-                        if (target.classList && target.classList.contains('ql-table-embed')) {
-                            return false;
-                        }
-                        target = target.parentNode;
-                    }
-                    return true;
-                });
-                return originalScrollUpdate.call(quill.scroll, filtered, context);
-            }
-            return originalScrollUpdate.apply(this, arguments);
-        };
+        // NOTE: We no longer override scroll.update to filter table mutations.
+        // Instead we use withTableGuard() which disconnects/reconnects the observer
+        // around table DOM changes. This keeps Quill's undo/redo history clean.
 
         // Add Clipboard Matcher for table-embed (for copy-paste of our own embedded tables)
         quill.clipboard.addMatcher('div.ql-table-embed', function(node, delta) {
             return new Delta().insert({ 'table-embed': node.innerHTML });
         });
 
-        // Sync helper to keep Quill's Delta in sync with manual DOM edits inside table cells
-        function syncTableDelta() {
-            quill.editor.delta = quill.getContents();
-        }
-
-        // Listen for user typing / editing inside table cells and sync Delta
+        // Listen for user typing / editing inside table cells and save content
+        // We do NOT overwrite quill.editor.delta here to preserve undo/redo.
         quill.root.addEventListener('input', function(e) {
             var node = e.target;
             var insideTable = false;
@@ -715,7 +709,7 @@ class NotePanel {
                 node = node.parentNode;
             }
             if (insideTable) {
-                syncTableDelta();
+                notifySave();
             }
         });
 
@@ -763,61 +757,11 @@ class NotePanel {
                 }
 
                 if (insideTable) {
+                    // Only preventDefault to keep focus/selection inside the table cell.
+                    // Do NOT apply formatting here — let the click propagate to Quill's
+                    // toolbar handler which calls quill.format(), and our quill.format
+                    // override will handle execCommand. This prevents double-toggle.
                     e.preventDefault();
-                    e.stopPropagation();
-
-                    var name = info.name;
-                    var value = info.value;
-
-                    if (name === 'bold') {
-                        document.execCommand('bold', false, null);
-                    } else if (name === 'italic') {
-                        document.execCommand('italic', false, null);
-                    } else if (name === 'underline') {
-                        document.execCommand('underline', false, null);
-                    } else if (name === 'strike') {
-                        document.execCommand('strikeThrough', false, null);
-                    } else if (name === 'color') {
-                        document.execCommand('foreColor', false, value);
-                    } else if (name === 'background') {
-                        document.execCommand('backColor', false, value);
-                    } else if (name === 'align') {
-                        var cell = getCell();
-                        if (cell) {
-                            cell.style.textAlign = value || '';
-                        }
-                    } else if (name === 'lineheight') {
-                        var cell = getCell();
-                        if (cell) {
-                            cell.style.lineHeight = value || '';
-                        }
-                    } else if (name === 'header') {
-                        var tag = value ? 'H' + value : 'span';
-                        document.execCommand('formatBlock', false, tag);
-                    } else if (name === 'list') {
-                        if (value === 'ordered') {
-                            document.execCommand('insertOrderedList', false, null);
-                        } else if (value === 'bullet') {
-                            document.execCommand('insertUnorderedList', false, null);
-                        }
-                    } else if (name === 'link') {
-                        if (value) {
-                            var href = typeof value === 'string' && value !== 'true' ? value : prompt('Enter the URL (e.g. https://google.com):');
-                            if (href) {
-                                document.execCommand('createLink', false, href);
-                            }
-                        } else {
-                            document.execCommand('unlink', false, null);
-                        }
-                    }
-
-                    var picker = e.target.closest('.ql-picker');
-                    if (picker) {
-                        picker.classList.remove('ql-expanded');
-                    }
-
-                    syncTableDelta();
-                    quill.root.dispatchEvent(new Event('input', { bubbles: true }));
                 }
             }
         }, true);
@@ -838,7 +782,7 @@ class NotePanel {
             tableHtml += '</tbody></table>';
 
             quill.insertEmbed(index, 'table-embed', tableHtml, Quill.sources.USER);
-            quill.setSelection(index + 1, Quill.sources.SILENT);
+            quill.setSelection(index + 1, Quill.sources.USER);
             // Trigger save
             quill.root.dispatchEvent(new Event('input', { bubbles: true }));
         }
@@ -878,75 +822,49 @@ class NotePanel {
             });
         }
 
-        // Paste interceptor: handles both inside-table and outside-table pasting
+        // Paste interceptor: ONLY handles pasting inside table cells.
+        // All other paste (from AI, from files, plain text) is left to Quill's native handler.
         quill.root.addEventListener('paste', function(e) {
-            var sel = window.getSelection();
-            if (!sel || !sel.anchorNode) return;
+            try {
+                var sel = window.getSelection();
+                if (!sel || !sel.anchorNode) return;
 
-            // Check if cursor is inside a table
-            var node = sel.anchorNode;
-            var insideTable = false;
-            while (node && node !== quill.root) {
-                if (node.classList && node.classList.contains('ql-table-embed')) {
-                    insideTable = true;
-                    break;
+                // Check if cursor is inside a table
+                var node = sel.anchorNode;
+                var insideTable = false;
+                while (node && node !== quill.root) {
+                    if (node.classList && node.classList.contains('ql-table-embed')) {
+                        insideTable = true;
+                        break;
+                    }
+                    node = node.parentNode;
                 }
-                node = node.parentNode;
-            }
 
-            var clipboardData = e.clipboardData || window.clipboardData;
-            var html = clipboardData.getData('text/html');
-            var text = clipboardData.getData('text/plain');
+                // Only intercept when inside a table cell
+                if (!insideTable) return;
 
-            if (insideTable) {
-                // Inside table: use execCommand to insert directly into contenteditable cell
+                var clipboardData = e.clipboardData || window.clipboardData;
+                if (!clipboardData) return;
+
+                var html = clipboardData.getData('text/html');
+                var text = clipboardData.getData('text/plain');
+
                 e.preventDefault();
                 e.stopPropagation();
-                if (html) {
-                    var parser = new DOMParser();
-                    var doc = parser.parseFromString(html, 'text/html');
-                    sanitizePastedHtml(doc);
-                    document.execCommand('insertHTML', false, doc.body.innerHTML);
-                } else if (text) {
-                    document.execCommand('insertText', false, text);
-                }
-                syncTableDelta();
-                quill.root.dispatchEvent(new Event('input', { bubbles: true }));
-            } else if (html && html.includes('<table')) {
-                // Outside table with a table in clipboard: wrap tables in ql-table-embed and insert
-                e.preventDefault();
-                e.stopPropagation();
-
-                var parser = new DOMParser();
-                var doc = parser.parseFromString(html, 'text/html');
-
-                // Wrap any raw <table> elements in ql-table-embed
-                doc.querySelectorAll('table').forEach(function(table) {
-                    if (table.parentElement && table.parentElement.classList.contains('ql-table-embed')) return;
-                    var wrapper = doc.createElement('div');
-                    wrapper.className = 'ql-table-embed';
-                    wrapper.setAttribute('contenteditable', 'true');
-                    wrapper.setAttribute('data-table-embed', 'true');
-                    table.parentNode.insertBefore(wrapper, table);
-                    wrapper.appendChild(table);
+                withTableGuard(function() {
+                    if (html) {
+                        var parser = new DOMParser();
+                        var doc = parser.parseFromString(html, 'text/html');
+                        sanitizePastedHtml(doc);
+                        document.execCommand('insertHTML', false, doc.body.innerHTML);
+                    } else if (text) {
+                        document.execCommand('insertText', false, text);
+                    }
                 });
-
-                sanitizePastedHtml(doc);
-
-                var modifiedHtml = doc.body.innerHTML;
-                var range = quill.getSelection(true);
-                var index = range ? range.index : quill.getLength();
-                var length = range ? range.length : 0;
-
-                var delta = quill.clipboard.convert(modifiedHtml);
-                quill.updateContents(
-                    new Delta().retain(index).delete(length).concat(delta),
-                    Quill.sources.USER
-                );
-                quill.setSelection(index + delta.length(), Quill.sources.SILENT);
+            } catch(err) {
+                // If anything goes wrong, don't block Quill's native handler
+                console.error('Notely paste handler error:', err);
             }
-            // All other cases (plain text, regular HTML from AI without tables):
-            // Do NOT intercept — let Quill's native paste handler work perfectly
         }, true);
 
 
@@ -1013,31 +931,34 @@ class NotePanel {
         document.getElementById('add-row').addEventListener('click', function() {
             var td = getCell(); if (!td) return;
             var row = td.closest('tr'); if (!row) return;
-            var nr = row.cloneNode(true);
-            var tds = nr.querySelectorAll('td,th'); for(var i=0;i<tds.length;i++) tds[i].innerHTML='<br>';
-            row.parentNode.insertBefore(nr, row.nextSibling);
-            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+            withTableGuard(function() {
+                var nr = row.cloneNode(true);
+                var tds = nr.querySelectorAll('td,th'); for(var i=0;i<tds.length;i++) tds[i].innerHTML='<br>';
+                row.parentNode.insertBefore(nr, row.nextSibling);
+            });
         });
         document.getElementById('add-col').addEventListener('click', function() {
             var td = getCell(); if (!td) return;
             var row = td.closest('tr'); if (!row) return;
             var ci = Array.prototype.indexOf.call(row.children, td);
             var tbl = td.closest('table'); if (!tbl) return;
-            var rows = tbl.querySelectorAll('tr');
-            for(var i=0;i<rows.length;i++){var ref=rows[i].children[ci];var nc=document.createElement('td');nc.innerHTML='<br>';if(ref&&ref.nextSibling)rows[i].insertBefore(nc,ref.nextSibling);else rows[i].appendChild(nc);}
-            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+            withTableGuard(function() {
+                var rows = tbl.querySelectorAll('tr');
+                for(var i=0;i<rows.length;i++){var ref=rows[i].children[ci];var nc=document.createElement('td');nc.innerHTML='<br>';if(ref&&ref.nextSibling)rows[i].insertBefore(nc,ref.nextSibling);else rows[i].appendChild(nc);}
+            });
         });
         document.getElementById('del-row').addEventListener('click', function() {
             var td = getCell(); if (!td) return;
             var row = td.closest('tr'); if (!row) return;
             var tbl = row.closest('table');
             var embed = row.closest('.ql-table-embed');
-            row.parentNode.removeChild(row);
-            if (tbl && tbl.querySelectorAll('tr').length === 0) {
-                if (embed) embed.parentNode.removeChild(embed);
-                else tbl.parentNode.removeChild(tbl);
-            }
-            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+            withTableGuard(function() {
+                row.parentNode.removeChild(row);
+                if (tbl && tbl.querySelectorAll('tr').length === 0) {
+                    if (embed) embed.parentNode.removeChild(embed);
+                    else tbl.parentNode.removeChild(tbl);
+                }
+            });
         });
         document.getElementById('del-col').addEventListener('click', function() {
             var td = getCell(); if (!td) return;
@@ -1045,13 +966,14 @@ class NotePanel {
             var ci = Array.prototype.indexOf.call(row.children, td);
             var tbl = td.closest('table'); if (!tbl) return;
             var embed = td.closest('.ql-table-embed');
-            var rows = tbl.querySelectorAll('tr');
-            for(var i=0;i<rows.length;i++){var t=rows[i].children[ci];if(t)rows[i].removeChild(t);}
-            if(tbl.querySelector('tr')&&tbl.querySelector('tr').children.length===0) {
-                if (embed) embed.parentNode.removeChild(embed);
-                else tbl.parentNode.removeChild(tbl);
-            }
-            quill.root.dispatchEvent(new Event('input', { bubbles: true }));
+            withTableGuard(function() {
+                var rows = tbl.querySelectorAll('tr');
+                for(var i=0;i<rows.length;i++){var t=rows[i].children[ci];if(t)rows[i].removeChild(t);}
+                if(tbl.querySelector('tr')&&tbl.querySelector('tr').children.length===0) {
+                    if (embed) embed.parentNode.removeChild(embed);
+                    else tbl.parentNode.removeChild(tbl);
+                }
+            });
         });
 
         function updateTableActionsVisibility() {
@@ -1077,14 +999,23 @@ class NotePanel {
 
         // Notify VS Code when content changes
         function notifySave() {
-            const html = quill.root.innerHTML;
+            var html = quill.root.innerHTML;
             vscode.postMessage({
                 command: 'updateContent',
                 text: html
             });
         }
-        quill.on('text-change', notifySave);
-        quill.root.addEventListener('input', notifySave);
+        let saveTimer;
+
+        quill.on('text-change', function() {
+            clearTimeout(saveTimer);
+
+            saveTimer = setTimeout(() => {
+                notifySave();
+            }, 300);
+        });
+
+
 
 
     </script>
