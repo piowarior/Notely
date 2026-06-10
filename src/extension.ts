@@ -587,8 +587,8 @@ class NotePanel {
             modules: {
 
                 history: {
-                    delay: 2000,
-                    maxStack: 500,
+                    delay: 500,
+                    maxStack: 100,
                     userOnly: true
                 },
 
@@ -792,17 +792,40 @@ class NotePanel {
         quill.root.addEventListener('keydown', function(e) {
             var sel = window.getSelection();
             if (!sel || !sel.anchorNode) return;
+
             var node = sel.anchorNode;
-            // walk up to see if we're inside a .ql-table-embed
+
             while (node && node !== quill.root) {
-                if (node.classList && node.classList.contains('ql-table-embed')) {
-                    // We are inside a table embed — stop Quill from swallowing these keys
+                if (
+                    node.classList &&
+                    node.classList.contains('ql-table-embed')
+                ) {
+
+                    // izinkan undo / redo
+                    if (
+                        e.ctrlKey &&
+                        (
+                            e.key.toLowerCase() === 'z' ||
+                            e.key.toLowerCase() === 'y'
+                        )
+                    ) {
+                        return;
+                    }
+
                     e.stopPropagation();
                     return;
                 }
+
                 node = node.parentNode;
             }
         }, true); // capture phase so we run before Quill's own listeners
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
+                quill.history.redo();
+            }
+        });
 
         // Sanitize colors and backgrounds from pasted HTML to adapt to theme
         function sanitizePastedHtml(doc) {
