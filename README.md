@@ -18,7 +18,7 @@ Notely is a global note-taking companion for Visual Studio Code. Designed to eli
 
 ## Workspace Structure
 
-![Notely Workspace Structure](<gambar.png>)
+![Notely Workspace Structure](gambardemonotely.png)
 
 The Notely interface provides a structured directory of folders and files. This layout facilitates seamless navigation through your documentation, allowing you to maintain a clear overview of your project requirements, logic, and notes while staying focused on your active development tasks.
 
