@@ -187,6 +187,13 @@ class NotePanel {
 
         const newPanel = new NotePanel(panel, item, provider);
         NotePanel.currentPanels.set(item, newPanel);
+        panel.onDidChangeViewState(e => {
+            if (e.webviewPanel.visible) {
+                e.webviewPanel.webview.postMessage({
+                    command: 'restoreFocus'
+                });
+            }
+        });
     }
 
     private constructor(panel: vscode.WebviewPanel, item: NoteItem, provider: NotelyProvider) {
@@ -696,6 +703,12 @@ class NotePanel {
             return new Delta().insert({ 'table-embed': node.innerHTML });
         });
 
+        quill.clipboard.addMatcher('TABLE', function(node, delta) {
+            return new Delta().insert({
+                'table-embed': node.outerHTML
+            });
+        });
+
         // Listen for user typing / editing inside table cells and save content
         // We do NOT overwrite quill.editor.delta here to preserve undo/redo.
         quill.root.addEventListener('input', function(e) {
@@ -876,10 +889,20 @@ class NotePanel {
                 e.stopPropagation();
                 withTableGuard(function() {
                     if (html) {
+                        console.log('PASTE HTML:', html);
+
                         var parser = new DOMParser();
                         var doc = parser.parseFromString(html, 'text/html');
+
+                        console.log('BODY HTML:', doc.body.innerHTML);
+
                         sanitizePastedHtml(doc);
-                        document.execCommand('insertHTML', false, doc.body.innerHTML);
+
+                        document.execCommand(
+                            'insertHTML',
+                            false,
+                            doc.body.innerHTML
+                        );
                     } else if (text) {
                         document.execCommand('insertText', false, text);
                     }
@@ -1019,6 +1042,40 @@ class NotePanel {
         // Initialize with existing content
         const initialContent = \`${this.item.content || ''}\`;
         quill.clipboard.dangerouslyPasteHTML(initialContent);
+
+        // Restore focus ketika kembali ke tab webview
+
+        window.addEventListener('focus', () => {
+                setTimeout(() => {
+                    quill.focus();
+                }, 10);
+            });
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                setTimeout(() => {
+                    quill.focus();
+                }, 10);
+            }
+        });
+        
+        window.addEventListener('message', event => {
+            const message = event.data;
+
+            if (message.command === 'restoreFocus') {
+                const range = quill.getSelection();
+
+                setTimeout(() => {
+                    quill.focus();
+
+                    if (range) {
+                        quill.setSelection(range.index, range.length);
+                    } else {
+                        quill.setSelection(quill.getLength(), 0);
+                    }
+                }, 50);
+            }
+        });
 
         // Notify VS Code when content changes
         function notifySave() {
