@@ -622,14 +622,53 @@ class NotePanel {
             placeholder: ''
         });
 
+        var lastTableHtml = null;
+        var activeTableBlot = null;
+
         // Helper: pause Quill's observer, run fn, resume observer, save content.
         // This prevents Quill from seeing table DOM changes (so it won't revert them)
         // and does NOT corrupt Quill's undo/redo history.
         var _observerConfig = { attributes: true, characterData: true, childList: true, subtree: true };
         function withTableGuard(fn) {
+            var sel = window.getSelection();
+            var embedNode = null;
+            if (sel && sel.anchorNode) {
+                var node = sel.anchorNode;
+                while (node && node !== quill.root) {
+                    if (node.classList && node.classList.contains('ql-table-embed')) {
+                        embedNode = node;
+                        break;
+                    }
+                    node = node.parentNode;
+                }
+            }
+
+            var oldHtml = embedNode ? embedNode.innerHTML : null;
+            var blot = embedNode ? Quill.find(embedNode) : null;
+
             quill.scroll.observer.disconnect();
             fn();
             quill.scroll.observer.observe(quill.scroll.domNode, _observerConfig);
+
+            if (embedNode && blot) {
+                var newHtml = embedNode.innerHTML;
+                if (newHtml !== oldHtml) {
+                    var index = quill.getIndex(blot);
+                    var Delta = Quill.import('delta');
+                    var redoDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': newHtml });
+                    var undoDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': oldHtml });
+
+                    quill.history.undoStack.push({
+                        redoDelta: redoDelta,
+                        undoDelta: undoDelta
+                    });
+                    quill.history.redoStack = [];
+                    quill.editor.delta = quill.editor.delta.compose(redoDelta);
+                    
+                    lastTableHtml = newHtml;
+                    activeTableBlot = blot;
+                }
+            }
             notifySave();
         }
 
@@ -709,8 +748,81 @@ class NotePanel {
             });
         });
 
+        function syncTableChange() {
+            var sel = window.getSelection();
+            if (!sel || !sel.anchorNode) return;
+            var node = sel.anchorNode;
+            var embedNode = null;
+            while (node && node !== quill.root) {
+                if (node.classList && node.classList.contains('ql-table-embed')) {
+                    embedNode = node;
+                    break;
+                }
+                node = node.parentNode;
+            }
+            if (!embedNode) {
+                lastTableHtml = null;
+                activeTableBlot = null;
+                return;
+            }
+
+            var blot = Quill.find(embedNode);
+            if (!blot) return;
+
+            var newHtml = embedNode.innerHTML;
+            if (lastTableHtml === null || activeTableBlot !== blot) {
+                lastTableHtml = newHtml;
+                activeTableBlot = blot;
+                return;
+            }
+
+            if (newHtml !== lastTableHtml) {
+                var index = quill.getIndex(blot);
+                var Delta = Quill.import('delta');
+                var redoDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': newHtml });
+                var undoDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': lastTableHtml });
+
+                quill.history.undoStack.push({
+                    redoDelta: redoDelta,
+                    undoDelta: undoDelta
+                });
+                quill.history.redoStack = [];
+                quill.editor.delta = quill.editor.delta.compose(redoDelta);
+
+                lastTableHtml = newHtml;
+                activeTableBlot = blot;
+                notifySave();
+            }
+        }
+
+        function initializeTableState() {
+            var sel = window.getSelection();
+            if (!sel || !sel.anchorNode) return;
+            var node = sel.anchorNode;
+            var embedNode = null;
+            while (node && node !== quill.root) {
+                if (node.classList && node.classList.contains('ql-table-embed')) {
+                    embedNode = node;
+                    break;
+                }
+                node = node.parentNode;
+            }
+            if (embedNode) {
+                var blot = Quill.find(embedNode);
+                if (blot) {
+                    activeTableBlot = blot;
+                    lastTableHtml = embedNode.innerHTML;
+                }
+            } else {
+                activeTableBlot = null;
+                lastTableHtml = null;
+            }
+        }
+
+        quill.root.addEventListener('click', initializeTableState);
+        quill.root.addEventListener('keyup', initializeTableState);
+
         // Listen for user typing / editing inside table cells and save content
-        // We do NOT overwrite quill.editor.delta here to preserve undo/redo.
         quill.root.addEventListener('input', function(e) {
             var node = e.target;
             var insideTable = false;
@@ -722,7 +834,7 @@ class NotePanel {
                 node = node.parentNode;
             }
             if (insideTable) {
-                notifySave();
+                syncTableChange();
             }
         });
 
@@ -754,8 +866,9 @@ class NotePanel {
 
         // Capturing listener on toolbar to apply formatting to table selections before Quill handles it
         document.getElementById('toolbar').addEventListener('mousedown', function(e) {
+            var isPicker = e.target.closest('.ql-picker');
             var info = getToolbarFormat(e.target);
-            if (!info) return;
+            if (!info && !isPicker) return;
 
             var sel = window.getSelection();
             if (sel && sel.anchorNode) {
@@ -770,10 +883,7 @@ class NotePanel {
                 }
 
                 if (insideTable) {
-                    // Only preventDefault to keep focus/selection inside the table cell.
-                    // Do NOT apply formatting here — let the click propagate to Quill's
-                    // toolbar handler which calls quill.format(), and our quill.format
-                    // override will handle execCommand. This prevents double-toggle.
+                    // Prevent focus loss when clicking toolbar buttons or picker dropdowns
                     e.preventDefault();
                 }
             }
@@ -833,19 +943,123 @@ class NotePanel {
             }
         }, true); // capture phase so we run before Quill's own listeners
 
-        // Helper to check if selection is inside a table embed
-        function isSelectionInTable() {
+        function saveTableSelection() {
             var sel = window.getSelection();
-            if (!sel || !sel.anchorNode) return false;
+            if (!sel || !sel.anchorNode) return null;
             var node = sel.anchorNode;
+            
+            var cell = null;
+            var embedNode = null;
             while (node && node !== quill.root) {
+                if (node.nodeName === 'TD' || node.nodeName === 'TH') {
+                    cell = node;
+                }
                 if (node.classList && node.classList.contains('ql-table-embed')) {
-                    return true;
+                    embedNode = node;
+                    break;
                 }
                 node = node.parentNode;
             }
-            return false;
+            if (!cell || !embedNode) return null;
+
+            var row = cell.parentNode;
+            var rowIndex = Array.prototype.indexOf.call(row.parentNode.children, row);
+            var colIndex = Array.prototype.indexOf.call(row.children, cell);
+
+            var blot = Quill.find(embedNode);
+            var embedIndex = blot ? quill.getIndex(blot) : -1;
+
+            var offset = 0;
+            var range = sel.getRangeAt(0);
+            var preRange = range.cloneRange();
+            preRange.selectNodeContents(cell);
+            preRange.setEnd(range.endContainer, range.endOffset);
+            offset = preRange.toString().length;
+
+            return {
+                embedIndex: embedIndex,
+                rowIndex: rowIndex,
+                colIndex: colIndex,
+                offset: offset
+            };
         }
+
+        function restoreTableSelection(state) {
+            if (!state || state.embedIndex === -1) return;
+
+            var blot = quill.scroll.find(state.embedIndex);
+            if (!blot || !blot.domNode) {
+                var embeds = quill.root.querySelectorAll('.ql-table-embed');
+                if (embeds.length > 0) {
+                    blot = Quill.find(embeds[0]);
+                }
+            }
+
+            if (!blot || !blot.domNode) return;
+            var table = blot.domNode.querySelector('table');
+            if (!table) return;
+
+            var tbody = table.querySelector('tbody') || table;
+            var row = tbody.children[state.rowIndex];
+            if (!row) return;
+            var cell = row.children[state.colIndex];
+            if (!cell) return;
+
+            cell.focus();
+
+            var sel = window.getSelection();
+            if (sel) {
+                var range = document.createRange();
+                var found = false;
+                var currentOffset = 0;
+
+                function traverse(node) {
+                    if (found) return;
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        if (currentOffset + node.length >= state.offset) {
+                            range.setStart(node, state.offset - currentOffset);
+                            range.setEnd(node, state.offset - currentOffset);
+                            found = true;
+                        } else {
+                            currentOffset += node.length;
+                        }
+                    } else {
+                        for (var i = 0; i < node.childNodes.length; i++) {
+                            traverse(node.childNodes[i]);
+                            if (found) return;
+                        }
+                    }
+                }
+
+                traverse(cell);
+
+                if (!found) {
+                    range.selectNodeContents(cell);
+                    range.collapse(false);
+                }
+
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+
+        var originalUndo = quill.history.undo.bind(quill.history);
+        quill.history.undo = function() {
+            var state = saveTableSelection();
+            originalUndo();
+            setTimeout(function() {
+                restoreTableSelection(state);
+            }, 0);
+        };
+
+        var originalRedo = quill.history.redo.bind(quill.history);
+        quill.history.redo = function() {
+            var state = saveTableSelection();
+            originalRedo();
+            setTimeout(function() {
+                restoreTableSelection(state);
+            }, 0);
+        };
 
         // Intercept Ctrl+Z and Ctrl+Y globally to handle them exclusively via Quill history,
         // preventing conflicts with native browser undo/redo outside of table embeds.
@@ -854,10 +1068,6 @@ class NotePanel {
             var insideInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && !quill.root.contains(active);
             if (insideInput) {
                 return; // Let native undo/redo work for normal input fields outside the editor
-            }
-
-            if (isSelectionInTable()) {
-                return; // Let native browser undo/redo work for table cells
             }
 
             if (e.ctrlKey && e.key.toLowerCase() === 'z') {
