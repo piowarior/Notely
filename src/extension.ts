@@ -594,8 +594,8 @@ class NotePanel {
             modules: {
 
                 history: {
-                    delay: 500,
-                    maxStack: 100,
+                    delay: 0,
+                    maxStack: 2000,
                     userOnly: true
                 },
 
@@ -833,12 +833,44 @@ class NotePanel {
             }
         }, true); // capture phase so we run before Quill's own listeners
 
+        // Helper to check if selection is inside a table embed
+        function isSelectionInTable() {
+            var sel = window.getSelection();
+            if (!sel || !sel.anchorNode) return false;
+            var node = sel.anchorNode;
+            while (node && node !== quill.root) {
+                if (node.classList && node.classList.contains('ql-table-embed')) {
+                    return true;
+                }
+                node = node.parentNode;
+            }
+            return false;
+        }
+
+        // Intercept Ctrl+Z and Ctrl+Y globally to handle them exclusively via Quill history,
+        // preventing conflicts with native browser undo/redo outside of table embeds.
         document.addEventListener('keydown', function(e) {
+            var active = document.activeElement;
+            var insideInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && !quill.root.contains(active);
+            if (insideInput) {
+                return; // Let native undo/redo work for normal input fields outside the editor
+            }
+
+            if (isSelectionInTable()) {
+                return; // Let native browser undo/redo work for table cells
+            }
+
+            if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                e.stopPropagation();
+                quill.history.undo();
+            }
             if (e.ctrlKey && e.key.toLowerCase() === 'y') {
                 e.preventDefault();
+                e.stopPropagation();
                 quill.history.redo();
             }
-        });
+        }, true); // Use capture phase to prevent browser default behavior early
 
         // Sanitize colors and backgrounds from pasted HTML to adapt to theme
         function sanitizePastedHtml(doc) {
@@ -1044,16 +1076,32 @@ class NotePanel {
         quill.clipboard.dangerouslyPasteHTML(initialContent);
 
         // Restore focus ketika kembali ke tab webview
+        function isEditorFocused() {
+            return document.activeElement && 
+                   (document.activeElement === quill.root || quill.root.contains(document.activeElement));
+        }
 
         window.addEventListener('focus', () => {
-                setTimeout(() => {
-                    quill.focus();
-                }, 10);
-            });
+            if (isEditorFocused()) {
+                return;
+            }
+            setTimeout(() => {
+                if (isEditorFocused()) {
+                    return;
+                }
+                quill.focus();
+            }, 10);
+        });
 
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
+                if (isEditorFocused()) {
+                    return;
+                }
                 setTimeout(() => {
+                    if (isEditorFocused()) {
+                        return;
+                    }
                     quill.focus();
                 }, 10);
             }
@@ -1063,9 +1111,15 @@ class NotePanel {
             const message = event.data;
 
             if (message.command === 'restoreFocus') {
+                if (isEditorFocused()) {
+                    return;
+                }
                 const range = quill.getSelection();
 
                 setTimeout(() => {
+                    if (isEditorFocused()) {
+                        return;
+                    }
                     quill.focus();
 
                     if (range) {
