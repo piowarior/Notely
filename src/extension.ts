@@ -112,11 +112,11 @@ class NotelyProvider implements vscode.TreeDataProvider<NoteItem> {
     addNote(name: string, parent?: NoteItem) {
 
         const note = new NoteItem(name, false, {
-             command: 'notely.open',
-             title: 'Open Note',
-             arguments: [name] // Temporarily pass name, will update below
+            command: 'notely.open',
+            title: 'Open Note',
+            arguments: [name] // Temporarily pass name, will update below
         });
-        
+
         // Update its command argument to refer to itself once it's created.
         note.command!.arguments = [note];
 
@@ -622,8 +622,60 @@ class NotePanel {
             placeholder: ''
         });
 
-        var lastTableHtml = null;
-        var activeTableBlot = null;
+        var activeTableNode = null;
+        var initialTableHtml = null;
+
+        function updateTableEmbedOfficially(embedNode, newHtml, oldHtml) {
+            var blot = Quill.find(embedNode);
+            if (!blot) return;
+            var index = quill.getIndex(blot);
+            if (index === -1) return;
+
+            var state = saveTableSelection();
+
+            // Revert DOM temporarily so Quill registers the difference during updateContents
+            embedNode.innerHTML = oldHtml;
+
+            var Delta = Quill.import('delta');
+            var changeDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': newHtml });
+            
+            quill.updateContents(changeDelta, 'user');
+
+            if (embedNode === activeTableNode) {
+                initialTableHtml = newHtml;
+            }
+
+            setTimeout(function() {
+                restoreTableSelection(state);
+            }, 0);
+        }
+
+        function checkTableFocusChange() {
+            if (isUndoingRedoing) return;
+            var sel = window.getSelection();
+            var currentTableNode = null;
+            if (sel && sel.anchorNode) {
+                var node = sel.anchorNode;
+                while (node && node !== quill.root) {
+                    if (node.classList && node.classList.contains('ql-table-embed')) {
+                        currentTableNode = node;
+                        break;
+                    }
+                    node = node.parentNode;
+                }
+            }
+
+            if (currentTableNode !== activeTableNode) {
+                if (activeTableNode) {
+                    var newHtml = activeTableNode.innerHTML;
+                    if (initialTableHtml !== null && newHtml !== initialTableHtml) {
+                        updateTableEmbedOfficially(activeTableNode, newHtml, initialTableHtml);
+                    }
+                }
+                activeTableNode = currentTableNode;
+                initialTableHtml = currentTableNode ? currentTableNode.innerHTML : null;
+            }
+        }
 
         // Helper: pause Quill's observer, run fn, resume observer, save content.
         // This prevents Quill from seeing table DOM changes (so it won't revert them)
@@ -644,29 +696,15 @@ class NotePanel {
             }
 
             var oldHtml = embedNode ? embedNode.innerHTML : null;
-            var blot = embedNode ? Quill.find(embedNode) : null;
 
             quill.scroll.observer.disconnect();
             fn();
             quill.scroll.observer.observe(quill.scroll.domNode, _observerConfig);
 
-            if (embedNode && blot) {
+            if (embedNode) {
                 var newHtml = embedNode.innerHTML;
                 if (newHtml !== oldHtml) {
-                    var index = quill.getIndex(blot);
-                    var Delta = Quill.import('delta');
-                    var redoDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': newHtml });
-                    var undoDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': oldHtml });
-
-                    quill.history.undoStack.push({
-                        redoDelta: redoDelta,
-                        undoDelta: undoDelta
-                    });
-                    quill.history.redoStack = [];
-                    quill.editor.delta = quill.editor.delta.compose(redoDelta);
-                    
-                    lastTableHtml = newHtml;
-                    activeTableBlot = blot;
+                    updateTableEmbedOfficially(embedNode, newHtml, oldHtml);
                 }
             }
             notifySave();
@@ -748,80 +786,6 @@ class NotePanel {
             });
         });
 
-        function syncTableChange() {
-            var sel = window.getSelection();
-            if (!sel || !sel.anchorNode) return;
-            var node = sel.anchorNode;
-            var embedNode = null;
-            while (node && node !== quill.root) {
-                if (node.classList && node.classList.contains('ql-table-embed')) {
-                    embedNode = node;
-                    break;
-                }
-                node = node.parentNode;
-            }
-            if (!embedNode) {
-                lastTableHtml = null;
-                activeTableBlot = null;
-                return;
-            }
-
-            var blot = Quill.find(embedNode);
-            if (!blot) return;
-
-            var newHtml = embedNode.innerHTML;
-            if (lastTableHtml === null || activeTableBlot !== blot) {
-                lastTableHtml = newHtml;
-                activeTableBlot = blot;
-                return;
-            }
-
-            if (newHtml !== lastTableHtml) {
-                var index = quill.getIndex(blot);
-                var Delta = Quill.import('delta');
-                var redoDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': newHtml });
-                var undoDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': lastTableHtml });
-
-                quill.history.undoStack.push({
-                    redoDelta: redoDelta,
-                    undoDelta: undoDelta
-                });
-                quill.history.redoStack = [];
-                quill.editor.delta = quill.editor.delta.compose(redoDelta);
-
-                lastTableHtml = newHtml;
-                activeTableBlot = blot;
-                notifySave();
-            }
-        }
-
-        function initializeTableState() {
-            var sel = window.getSelection();
-            if (!sel || !sel.anchorNode) return;
-            var node = sel.anchorNode;
-            var embedNode = null;
-            while (node && node !== quill.root) {
-                if (node.classList && node.classList.contains('ql-table-embed')) {
-                    embedNode = node;
-                    break;
-                }
-                node = node.parentNode;
-            }
-            if (embedNode) {
-                var blot = Quill.find(embedNode);
-                if (blot) {
-                    activeTableBlot = blot;
-                    lastTableHtml = embedNode.innerHTML;
-                }
-            } else {
-                activeTableBlot = null;
-                lastTableHtml = null;
-            }
-        }
-
-        quill.root.addEventListener('click', initializeTableState);
-        quill.root.addEventListener('keyup', initializeTableState);
-
         // Listen for user typing / editing inside table cells and save content
         quill.root.addEventListener('input', function(e) {
             var node = e.target;
@@ -834,7 +798,10 @@ class NotePanel {
                 node = node.parentNode;
             }
             if (insideTable) {
-                syncTableChange();
+                clearTimeout(saveTimer);
+                saveTimer = setTimeout(() => {
+                    notifySave();
+                }, 300);
             }
         });
 
@@ -966,99 +933,134 @@ class NotePanel {
             var rowIndex = Array.prototype.indexOf.call(row.parentNode.children, row);
             var colIndex = Array.prototype.indexOf.call(row.children, cell);
 
-            var blot = Quill.find(embedNode);
-            var embedIndex = blot ? quill.getIndex(blot) : -1;
+            var embeds = Array.from(quill.root.querySelectorAll('.ql-table-embed'));
+            var tableIndex = embeds.indexOf(embedNode);
 
-            var offset = 0;
             var range = sel.getRangeAt(0);
-            var preRange = range.cloneRange();
-            preRange.selectNodeContents(cell);
-            preRange.setEnd(range.endContainer, range.endOffset);
-            offset = preRange.toString().length;
+
+            var startRange = range.cloneRange();
+            startRange.selectNodeContents(cell);
+            startRange.setEnd(range.startContainer, range.startOffset);
+            var startOffset = startRange.toString().length;
+
+            var endRange = range.cloneRange();
+            endRange.selectNodeContents(cell);
+            endRange.setEnd(range.endContainer, range.endOffset);
+            var endOffset = endRange.toString().length;
 
             return {
-                embedIndex: embedIndex,
+                tableIndex: tableIndex,
                 rowIndex: rowIndex,
                 colIndex: colIndex,
-                offset: offset
+                startOffset: startOffset,
+                endOffset: endOffset
             };
         }
 
-        function restoreTableSelection(state) {
-            if (!state || state.embedIndex === -1) return;
+        var isUndoingRedoing = false;
 
-            var blot = quill.scroll.find(state.embedIndex);
-            if (!blot || !blot.domNode) {
-                var embeds = quill.root.querySelectorAll('.ql-table-embed');
-                if (embeds.length > 0) {
-                    blot = Quill.find(embeds[0]);
-                }
+        function restoreTableSelection(state) {
+            if (!state || state.tableIndex === -1) {
+                isUndoingRedoing = false;
+                return;
             }
 
-            if (!blot || !blot.domNode) return;
-            var table = blot.domNode.querySelector('table');
-            if (!table) return;
+            var embeds = quill.root.querySelectorAll('.ql-table-embed');
+            var embedNode = embeds[state.tableIndex];
+            if (!embedNode) {
+                isUndoingRedoing = false;
+                return;
+            }
+
+            var table = embedNode.querySelector('table');
+            if (!table) {
+                isUndoingRedoing = false;
+                return;
+            }
 
             var tbody = table.querySelector('tbody') || table;
             var row = tbody.children[state.rowIndex];
-            if (!row) return;
+            if (!row) {
+                isUndoingRedoing = false;
+                return;
+            }
             var cell = row.children[state.colIndex];
-            if (!cell) return;
+            if (!cell) {
+                isUndoingRedoing = false;
+                return;
+            }
 
             cell.focus();
 
             var sel = window.getSelection();
             if (sel) {
                 var range = document.createRange();
-                var found = false;
+                var startNode = null, startNodeOffset = 0;
+                var endNode = null, endNodeOffset = 0;
                 var currentOffset = 0;
 
                 function traverse(node) {
-                    if (found) return;
                     if (node.nodeType === Node.TEXT_NODE) {
-                        if (currentOffset + node.length >= state.offset) {
-                            range.setStart(node, state.offset - currentOffset);
-                            range.setEnd(node, state.offset - currentOffset);
-                            found = true;
-                        } else {
-                            currentOffset += node.length;
+                        if (startNode === null && currentOffset + node.length >= state.startOffset) {
+                            startNode = node;
+                            startNodeOffset = state.startOffset - currentOffset;
                         }
+                        if (endNode === null && currentOffset + node.length >= state.endOffset) {
+                            endNode = node;
+                            endNodeOffset = state.endOffset - currentOffset;
+                        }
+                        currentOffset += node.length;
                     } else {
                         for (var i = 0; i < node.childNodes.length; i++) {
                             traverse(node.childNodes[i]);
-                            if (found) return;
                         }
                     }
                 }
 
                 traverse(cell);
 
-                if (!found) {
-                    range.selectNodeContents(cell);
-                    range.collapse(false);
+                if (startNode === null) {
+                    startNode = cell;
+                    startNodeOffset = 0;
+                }
+                if (endNode === null) {
+                    endNode = cell;
+                    endNodeOffset = cell.childNodes.length;
                 }
 
-                sel.removeAllRanges();
-                sel.addRange(range);
+                try {
+                    range.setStart(startNode, startNodeOffset);
+                    range.setEnd(endNode, endNodeOffset);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                } catch (err) {
+                    console.error('Failed to restore range selection:', err);
+                }
             }
+
+            activeTableNode = embedNode;
+            initialTableHtml = embedNode.innerHTML;
+            isUndoingRedoing = false;
         }
 
         var originalUndo = quill.history.undo.bind(quill.history);
         quill.history.undo = function() {
+            isUndoingRedoing = true;
             var state = saveTableSelection();
             originalUndo();
             setTimeout(function() {
                 restoreTableSelection(state);
-            }, 0);
+            }, 10);
         };
 
         var originalRedo = quill.history.redo.bind(quill.history);
         quill.history.redo = function() {
+            isUndoingRedoing = true;
             var state = saveTableSelection();
             originalRedo();
             setTimeout(function() {
                 restoreTableSelection(state);
-            }, 0);
+            }, 10);
         };
 
         // Intercept Ctrl+Z and Ctrl+Y globally to handle them exclusively via Quill history,
@@ -1277,9 +1279,14 @@ class NotePanel {
             document.getElementById('table-actions').style.display = inTable ? 'flex' : 'none';
         }
 
-        quill.on('selection-change', updateTableActionsVisibility);
-        quill.root.addEventListener('click', updateTableActionsVisibility);
-        quill.root.addEventListener('keyup', updateTableActionsVisibility);
+        function handleSelectionOrFocusChange() {
+            checkTableFocusChange();
+            updateTableActionsVisibility();
+        }
+
+        quill.on('selection-change', handleSelectionOrFocusChange);
+        quill.root.addEventListener('click', handleSelectionOrFocusChange);
+        quill.root.addEventListener('keyup', handleSelectionOrFocusChange);
 
         // Initialize with existing content
         const initialContent = \`${this.item.content || ''}\`;
@@ -1303,8 +1310,14 @@ class NotePanel {
             }, 10);
         });
 
+        window.addEventListener('blur', () => {
+            checkTableFocusChange();
+        });
+
         document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) {
+            if (document.hidden) {
+                checkTableFocusChange();
+            } else {
                 if (isEditorFocused()) {
                     return;
                 }
@@ -1343,21 +1356,12 @@ class NotePanel {
 
         // Notify VS Code when content changes
         function notifySave() {
-            var html = quill.root.innerHTML;
             vscode.postMessage({
                 command: 'updateContent',
-                text: html
+                text: quill.root.innerHTML
             });
+
         }
-        let saveTimer;
-
-        quill.on('text-change', function() {
-            clearTimeout(saveTimer);
-
-            saveTimer = setTimeout(() => {
-                notifySave();
-            }, 300);
-        });
 
 
 
@@ -1430,7 +1434,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (item.isFolder) {
                 return;
             }
-            
+
             NotePanel.createOrShow(item, provider);
         })
     );
@@ -1456,7 +1460,7 @@ export function activate(context: vscode.ExtensionContext) {
         const rawContent = item.content || '';
         const workspaceFolders = vscode.workspace.workspaceFolders;
         const rootPath = workspaceFolders ? workspaceFolders[0].uri.fsPath : '';
-        
+
         let finalContent = rawContent;
         if (format === '.md') {
             const turndownService = new TurndownService();
@@ -1525,7 +1529,7 @@ ${rawContent}
             }
         })
     );
-    
+
     context.subscriptions.push(
         vscode.commands.registerCommand('notely.export.doc', (item: NoteItem) => {
             if (item && !item.isFolder) {
@@ -1581,4 +1585,7 @@ ${rawContent}
             }
         })
     );
+
+
 }
+
