@@ -622,6 +622,38 @@ class NotePanel {
             placeholder: ''
         });
 
+        // Intercept scroll.update to filter out mutations inside table embeds.
+        // This keeps Quill's internal model index and history stack clean.
+        var isUpdatingTable = false;
+        var originalScrollUpdate = quill.scroll.update;
+        quill.scroll.update = function(mutations, context) {
+            if (isUpdatingTable) {
+                if (this.observer) {
+                    this.observer.takeRecords(); // Discard all mutations
+                }
+                return;
+            }
+            if (!mutations && this.observer) {
+                mutations = this.observer.takeRecords();
+            }
+            if (Array.isArray(mutations)) {
+                mutations = mutations.filter(function(mutation) {
+                    var node = mutation.target;
+                    while (node && node !== quill.root) {
+                        if (node.classList && node.classList.contains('ql-table-embed')) {
+                            return false;
+                        }
+                        node = node.parentNode;
+                    }
+                    return true;
+                });
+                if (mutations.length === 0) {
+                    return;
+                }
+            }
+            return originalScrollUpdate.call(this, mutations, context);
+        };
+
         var activeTableNode = null;
         var initialTableHtml = null;
 
@@ -633,21 +665,19 @@ class NotePanel {
 
             var state = saveTableSelection();
 
-            // Revert DOM temporarily so Quill registers the difference during updateContents
-            embedNode.innerHTML = oldHtml;
-
             var Delta = Quill.import('delta');
             var changeDelta = new Delta().retain(index).delete(1).insert({ 'table-embed': newHtml });
             
+            isUpdatingTable = true;
             quill.updateContents(changeDelta, 'user');
+            quill.scroll.update(); // Flush mutations synchronously
+            isUpdatingTable = false;
 
             if (embedNode === activeTableNode) {
                 initialTableHtml = newHtml;
             }
 
-            setTimeout(function() {
-                restoreTableSelection(state);
-            }, 0);
+            restoreTableSelection(state);
         }
 
         function checkTableFocusChange() {
@@ -673,10 +703,6 @@ class NotePanel {
             }
         }
 
-        // Helper: pause Quill's observer, run fn, resume observer, save content.
-        // This prevents Quill from seeing table DOM changes (so it won't revert them)
-        // and does NOT corrupt Quill's undo/redo history.
-        var _observerConfig = { attributes: true, characterData: true, childList: true, subtree: true };
         function withTableGuard(fn) {
             var sel = window.getSelection();
             var embedNode = null;
@@ -693,16 +719,22 @@ class NotePanel {
 
             var oldHtml = embedNode ? embedNode.innerHTML : null;
 
-            quill.scroll.observer.disconnect();
+            isUpdatingTable = true;
             fn();
-            quill.scroll.observer.observe(quill.scroll.domNode, _observerConfig);
+            quill.scroll.update(); // Flush mutations synchronously
+            isUpdatingTable = false;
 
             if (embedNode) {
                 var newHtml = embedNode.innerHTML;
                 if (newHtml !== oldHtml) {
-                    updateTableEmbedOfficially(embedNode, newHtml, oldHtml);
+                    updateTableEmbedOfficially(
+                        embedNode,
+                        newHtml,
+                        oldHtml
+                    );
                 }
             }
+
             notifySave();
         }
 
@@ -785,15 +817,20 @@ class NotePanel {
         // Listen for user typing / editing inside table cells and save content
         quill.root.addEventListener('input', function(e) {
             var node = e.target;
-            var insideTable = false;
+            var embedNode = null;
             while (node && node !== quill.root) {
                 if (node.classList && node.classList.contains('ql-table-embed')) {
-                    insideTable = true;
+                    embedNode = node;
                     break;
                 }
                 node = node.parentNode;
             }
-            if (insideTable) {
+            if (embedNode) {
+                var newHtml = embedNode.innerHTML;
+                if (initialTableHtml !== null && newHtml !== initialTableHtml) {
+                    updateTableEmbedOfficially(embedNode, newHtml, initialTableHtml);
+                    initialTableHtml = newHtml;
+                }
                 clearTimeout(saveTimer);
                 saveTimer = setTimeout(() => {
                     notifySave();
@@ -1095,10 +1132,7 @@ class NotePanel {
                 return;
             }
 
-            // biarkan browser mengurus undo redo di tabel
-            if (isInsideTable()) {
-                return;
-            }
+            // We now handle undo/redo inside table embeds via Quill history stack
 
             if (e.ctrlKey && e.key.toLowerCase() === 'z') {
                 e.preventDefault();
@@ -1320,6 +1354,7 @@ class NotePanel {
         // Initialize with existing content
         const initialContent = \`${this.item.content || ''}\`;
         quill.clipboard.dangerouslyPasteHTML(initialContent);
+        
 
         // Restore focus ketika kembali ke tab webview
         function isEditorFocused() {
