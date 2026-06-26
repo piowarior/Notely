@@ -1,242 +1,4 @@
-import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
-import TurndownService from 'turndown';
-// We use require since turndown-plugin-gfm only distributes standard CJS/globals properly
-const turndownPluginGfm = require('turndown-plugin-gfm');
-
-class NoteItem extends vscode.TreeItem {
-    children: NoteItem[] = [];
-    content: string = ''; // Add content to store the markdown text
-
-    constructor(
-        public label: string,
-        public isFolder: boolean,
-        public readonly command?: vscode.Command
-    ) {
-        super(
-            label,
-            isFolder
-                ? vscode.TreeItemCollapsibleState.Collapsed
-                : vscode.TreeItemCollapsibleState.None
-        );
-
-        this.iconPath = new vscode.ThemeIcon(
-            isFolder ? 'folder' : 'file',
-            new vscode.ThemeColor(
-                isFolder ? 'charts.blue' : 'charts.green'
-            )
-        );
-
-        this.contextValue = isFolder ? 'folder' : 'note';
-    }
-}
-
-class NotelyProvider implements vscode.TreeDataProvider<NoteItem> {
-
-    private _onDidChangeTreeData = new vscode.EventEmitter<undefined | NoteItem>();
-    readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
-
-    public items: NoteItem[] = [];
-
-    constructor(private context: vscode.ExtensionContext) {
-        this.load();
-    }
-
-    private load() {
-        const data = this.context.globalState.get<any[]>('notelyData', []);
-        this.items = this.deserialize(data);
-    }
-
-    public save() {
-        const data = this.serialize(this.items);
-        this.context.globalState.update('notelyData', data);
-    }
-
-    private serialize(items: NoteItem[]): any[] {
-        return items.map(item => ({
-            label: item.label,
-            isFolder: item.isFolder,
-            content: item.content,
-            children: this.serialize(item.children || [])
-        }));
-    }
-
-    private deserialize(data: any[]): NoteItem[] {
-        if (!data) {
-            return [];
-        }
-        return data.map(d => {
-            let command: vscode.Command | undefined;
-            if (!d.isFolder) {
-                command = {
-                    command: 'notely.open',
-                    title: 'Open Note',
-                    arguments: []
-                };
-            }
-            const item = new NoteItem(d.label, d.isFolder, command);
-            if (command) {
-                // Must refer back to the created item instance
-                command.arguments = [item];
-            }
-            item.content = d.content || '';
-            item.children = this.deserialize(d.children || []);
-            return item;
-        });
-    }
-
-    refresh() {
-        this.save();
-        this._onDidChangeTreeData.fire(undefined);
-    }
-
-    getTreeItem(element: NoteItem): vscode.TreeItem {
-        return element;
-    }
-
-    getChildren(element?: NoteItem): Thenable<NoteItem[]> {
-
-        if (!element) {
-            return Promise.resolve(this.items);
-        }
-
-        return Promise.resolve(element.children);
-    }
-
-    addFolder(name: string) {
-        this.items.push(new NoteItem(name, true));
-        this.refresh();
-    }
-
-    addNote(name: string, parent?: NoteItem) {
-
-        const note = new NoteItem(name, false, {
-            command: 'notely.open',
-            title: 'Open Note',
-            arguments: [name] // Temporarily pass name, will update below
-        });
-
-        // Update its command argument to refer to itself once it's created.
-        note.command!.arguments = [note];
-
-        if (parent && parent.isFolder) {
-            parent.children.push(note);
-        } else {
-            this.items.push(note);
-        }
-
-        this.refresh();
-    }
-
-    rename(item: NoteItem, newName: string) {
-        item.label = newName;
-        this.refresh();
-    }
-
-    delete(item: NoteItem) {
-        const remove = (arr: NoteItem[]) => {
-            const index = arr.indexOf(item);
-            if (index !== -1) {
-                arr.splice(index, 1);
-                return true;
-            }
-
-            for (const child of arr) {
-                if (child.children && remove(child.children)) {
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        remove(this.items);
-        this.refresh();
-    }
-}
-
-class NotePanel {
-    public static currentPanels: Map<NoteItem, NotePanel> = new Map();
-
-    public readonly panel: vscode.WebviewPanel;
-    private readonly item: NoteItem;
-    private _disposables: vscode.Disposable[] = [];
-
-    public static createOrShow(item: NoteItem, provider: NotelyProvider) {
-        const column = vscode.window.activeTextEditor
-            ? vscode.window.activeTextEditor.viewColumn
-            : undefined;
-
-        const existingPanel = NotePanel.currentPanels.get(item);
-
-        if (existingPanel) {
-            existingPanel.panel.reveal(column);
-            return;
-        }
-
-        const panel = vscode.window.createWebviewPanel(
-            'notelyEditor',
-            `📝 ${item.label}`,
-            column || vscode.ViewColumn.One,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true
-            }
-        );
-
-        const newPanel = new NotePanel(panel, item, provider);
-        NotePanel.currentPanels.set(item, newPanel);
-        panel.onDidChangeViewState(e => {
-            if (e.webviewPanel.visible) {
-                e.webviewPanel.webview.postMessage({
-                    command: 'restoreFocus'
-                });
-            }
-        });
-    }
-
-    private constructor(panel: vscode.WebviewPanel, item: NoteItem, provider: NotelyProvider) {
-        this.panel = panel;
-        this.item = item;
-
-        this.update();
-
-        this.panel.onDidDispose(() => this.dispose(), null, this._disposables);
-
-        // Receive messages from the webview
-        this.panel.webview.onDidReceiveMessage(
-            message => {
-                switch (message.command) {
-                    case 'updateContent':
-                        this.item.content = message.text;
-                        provider.save(); // Keep persistence on changes
-                        return;
-                }
-            },
-            null,
-            this._disposables
-        );
-    }
-
-    private update() {
-        this.panel.webview.html = this.getHtmlForWebview();
-    }
-
-    public dispose() {
-        NotePanel.currentPanels.delete(this.item);
-        this.panel.dispose();
-
-        while (this._disposables.length) {
-            const x = this._disposables.pop();
-            if (x) {
-                x.dispose();
-            }
-        }
-    }
-
-    private getHtmlForWebview() {
-        return `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -558,7 +320,7 @@ class NotePanel {
 
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <script>
-        const vscode = acquireVsCodeApi();
+        window.acquireVsCodeApi = function() { return { postMessage: function(msg) { console.log("VS Code Message:", msg); } }; }; const vscode = acquireVsCodeApi();
         
         // Register Line Spacing Attribute
         var Parchment = Quill.import('parchment');
@@ -666,10 +428,14 @@ class NotePanel {
             }
 
             if (currentTableNode !== activeTableNode) {
+                if (activeTableNode) {
+                    var newHtml = activeTableNode.innerHTML;
+                    if (initialTableHtml !== null && newHtml !== initialTableHtml) {
+                        updateTableEmbedOfficially(activeTableNode, newHtml, initialTableHtml);
+                    }
+                }
                 activeTableNode = currentTableNode;
-                initialTableHtml = currentTableNode
-                    ? currentTableNode.innerHTML
-                    : null;
+                initialTableHtml = currentTableNode ? currentTableNode.innerHTML : null;
             }
         }
 
@@ -1061,43 +827,11 @@ class NotePanel {
 
         // Intercept Ctrl+Z and Ctrl+Y globally to handle them exclusively via Quill history,
         // preventing conflicts with native browser undo/redo outside of table embeds.
-        function isInsideTable() {
-            var sel = window.getSelection();
-            if (!sel || !sel.anchorNode) return false;
-
-            var node = sel.anchorNode;
-
-            while (node && node !== quill.root) {
-                if (
-                    node.classList &&
-                    node.classList.contains('ql-table-embed')
-                ) {
-                    return true;
-                }
-
-                node = node.parentNode;
-            }
-
-            return false;
-        }
-
         document.addEventListener('keydown', function(e) {
-
             var active = document.activeElement;
-
-            var insideInput =
-                active &&
-                (active.tagName === 'INPUT' ||
-                active.tagName === 'TEXTAREA') &&
-                !quill.root.contains(active);
-
+            var insideInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && !quill.root.contains(active);
             if (insideInput) {
-                return;
-            }
-
-            // biarkan browser mengurus undo redo di tabel
-            if (isInsideTable()) {
-                return;
+                return; // Let native undo/redo work for normal input fields outside the editor
             }
 
             if (e.ctrlKey && e.key.toLowerCase() === 'z') {
@@ -1105,14 +839,13 @@ class NotePanel {
                 e.stopPropagation();
                 quill.history.undo();
             }
-
             if (e.ctrlKey && e.key.toLowerCase() === 'y') {
                 e.preventDefault();
                 e.stopPropagation();
                 quill.history.redo();
             }
+        }, true); // Use capture phase to prevent browser default behavior early
 
-        }, true);
         // Sanitize colors and backgrounds from pasted HTML to adapt to theme
         function sanitizePastedHtml(doc) {
             var elements = doc.querySelectorAll('[style]');
@@ -1318,7 +1051,7 @@ class NotePanel {
         quill.root.addEventListener('keyup', handleSelectionOrFocusChange);
 
         // Initialize with existing content
-        const initialContent = \`${this.item.content || ''}\`;
+        const initialContent = \`<p>Initial text</p><table><tbody><tr><td>Cell 1</td><td>Cell 2</td></tr></tbody></table><p>End text</p>\`;
         quill.clipboard.dangerouslyPasteHTML(initialContent);
 
         // Restore focus ketika kembali ke tab webview
@@ -1399,222 +1132,4 @@ class NotePanel {
 
 
 </body>
-</html>`;
-    }
-}
-
-export function activate(context: vscode.ExtensionContext) {
-
-    const provider = new NotelyProvider(context);
-
-    vscode.window.registerTreeDataProvider('notelyView', provider);
-
-    // Track active documents and items to update content
-    const docToItemMap = new Map<vscode.TextDocument, NoteItem>();
-    const itemToDocMap = new Map<NoteItem, vscode.TextDocument>();
-
-    // ========== ADD FOLDER ==========
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.addFolder', async () => {
-            const name = await vscode.window.showInputBox({ prompt: 'Folder name' });
-            if (name) {
-                provider.addFolder(name);
-            }
-        })
-    );
-
-    // ========== ADD NOTE ==========
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.addNote', async (item: NoteItem) => {
-            const name = await vscode.window.showInputBox({ prompt: 'Note name' });
-            if (name) {
-                provider.addNote(name, item);
-            }
-        })
-    );
-
-    // ========== RENAME ==========
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.rename', async (item: NoteItem) => {
-            const name = await vscode.window.showInputBox({
-                prompt: 'Rename',
-                value: item.label
-            });
-
-            if (name) {
-                provider.rename(item, name);
-            }
-        })
-    );
-
-    // ========== DELETE ==========
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.delete', async (item: NoteItem) => {
-            const confirm = await vscode.window.showWarningMessage(`Are you sure you want to delete ${item.label}?`, 'Yes', 'No');
-            if (confirm === 'Yes') {
-                provider.delete(item);
-            }
-        })
-    );
-
-    // ========== OPEN NOTE ==========
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.open', async (item: NoteItem) => {
-            if (item.isFolder) {
-                return;
-            }
-
-            NotePanel.createOrShow(item, provider);
-        })
-    );
-
-    // Save document contents to the tree item when they change (only relevant if sticking with plaintext)
-    vscode.workspace.onDidChangeTextDocument(event => {
-        const item = docToItemMap.get(event.document);
-        if (item) {
-            item.content = event.document.getText();
-        }
-    }, null, context.subscriptions);
-
-    // Clean up mapping when a document is closed
-    vscode.workspace.onDidCloseTextDocument(doc => {
-        const item = docToItemMap.get(doc);
-        if (item) {
-            itemToDocMap.delete(item);
-        }
-        docToItemMap.delete(doc);
-    }, null, context.subscriptions);
-
-    const handleExport = async (item: NoteItem, format: string) => {
-        const rawContent = item.content || '';
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        const rootPath = workspaceFolders ? workspaceFolders[0].uri.fsPath : '';
-
-        let finalContent = rawContent;
-        if (format === '.md') {
-            const turndownService = new TurndownService();
-            turndownService.use(turndownPluginGfm.gfm);
-            finalContent = turndownService.turndown(rawContent);
-        } else if (format === '.doc') {
-            finalContent = `
-<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head>
-<meta charset='utf-8'>
-<title>${item.label}</title>
-<style>
-    body { font-family: Calibri, sans-serif; font-size: 12pt; }
-    table { border-collapse: collapse; width: 100%; margin-top: 10px; margin-bottom: 10px; }
-    th, td { border: 1px solid #999; padding: 5px; }
-</style>
-</head>
-<body>
-${rawContent}
-</body>
-</html>`;
-        } else if (format === '.txt') {
-            finalContent = rawContent.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim();
-        }
-
-        const targetSelected = await vscode.window.showQuickPick([
-            { label: 'Export to current Project Root', isRoot: true },
-            { label: 'Choose custom location...', isRoot: false }
-        ], { placeHolder: `Select export location for ${format}` });
-
-        if (!targetSelected) {
-            return;
-        }
-
-        let finalUri: vscode.Uri | undefined;
-
-        if (targetSelected.isRoot && rootPath) {
-            const filePath = path.join(rootPath, item.label + format);
-            finalUri = vscode.Uri.file(filePath);
-        } else {
-            finalUri = await vscode.window.showSaveDialog({
-                defaultUri: vscode.Uri.file(path.join(rootPath || '', item.label + format)),
-                filters: {
-                    'Documents': [format.replace('.', '')],
-                    'All Files': ['*']
-                }
-            });
-        }
-
-        if (finalUri) {
-            fs.writeFile(finalUri.fsPath, finalContent, (err) => {
-                if (err) {
-                    vscode.window.showErrorMessage('Failed to export note');
-                } else {
-                    vscode.window.showInformationMessage(`Note exported to ${finalUri!.fsPath}`);
-                }
-            });
-        }
-    };
-
-    // ========== EXPORT COMMANDS ==========
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.export.md', (item: NoteItem) => {
-            if (item && !item.isFolder) {
-                handleExport(item, '.md');
-            }
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.export.doc', (item: NoteItem) => {
-            if (item && !item.isFolder) {
-                handleExport(item, '.doc');
-            }
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.export.txt', (item: NoteItem) => {
-            if (item && !item.isFolder) {
-                handleExport(item, '.txt');
-            }
-        })
-    );
-
-    // ========== IMPORT NOTE ==========
-    context.subscriptions.push(
-        vscode.commands.registerCommand('notely.import', async (item: NoteItem) => {
-            const fileUri = await vscode.window.showOpenDialog({
-                canSelectMany: false,
-                filters: {
-                    'Documents': ['md', 'doc', 'txt'],
-                    'All Files': ['*']
-                }
-            });
-
-            if (fileUri && fileUri[0]) {
-                const content = fs.readFileSync(fileUri[0].fsPath, 'utf8');
-
-                // Determine file type based on extension
-                const ext = path.extname(fileUri[0].fsPath).toLowerCase();
-                let parsedContent = content;
-
-                if (ext === '.md') {
-                    // Markdown - use as is
-                    parsedContent = content;
-                } else if (ext === '.doc') {
-                    // Word Document - convert from HTML
-                    const turndownService = new TurndownService();
-                    turndownService.use(turndownPluginGfm.gfm);
-                    parsedContent = turndownService.turndown(content);
-                } else if (ext === '.txt') {
-                    // Text file - convert HTML tags to new lines
-                    parsedContent = content.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim();
-                }
-
-                // Create a new note with the imported content
-                provider.addNote(path.basename(fileUri[0].fsPath, ext), item);
-                const newItem = provider.items[provider.items.length - 1];
-                newItem.content = parsedContent;
-                provider.save();
-            }
-        })
-    );
-
-
-}
-
+</html>
